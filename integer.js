@@ -21,7 +21,7 @@ class ZohoToPostgresSync {
         };
     }
 
-    // Paso 1: Obtener token de Zoho CRM
+    // Paso 1: Obtener token de Zoho CRM [PRODUCCIÓN]
     async getZohoAccessToken() {
         try {
             const response = await axios.post(
@@ -49,8 +49,8 @@ class ZohoToPostgresSync {
         }
     }
 
-    // Paso 2: Ejecutar consulta COQL para obtener el proyecto
-    async getZohoProjectData(accessToken) {
+    // Paso 2: Ejecutar consulta COQL para obtener el proyecto [Proyectos_Inmobiliarios]
+    async getZohoProjectData(accessToken) { 
         const query = {
             select_query: `
             SELECT id, Name, ID_Proyecto, Tipo_Proyecto, Inmuebles_desde, Areas_desde, Direcci_n_de_proyecto, Ciudad_de_proyecto.Name, Descripci_n_tipo_documento, Especificacion_Proy 
@@ -90,7 +90,7 @@ class ZohoToPostgresSync {
         }
     }
 
-    // Paso 3: Insertar proyecto en tabla PostgreSQL
+    // Paso 3: Insertar proyecto en tabla PostgreSQL [project]
     async insertProjectIntoPostgres(project) {
         const client = await this.pool.connect();
         try {

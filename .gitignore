@@ -1,6 +1,7 @@
 # Dependencias
 node_modules/
-test_conexiones.js
+# Archivos de configuración
+
 # Archivo de variables de entorno
 .env
 

@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "integer.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "integer": "node integer.js",
+    "testConnection": "node testConnection.js"
   },
   "keywords": [],
   "author": "",
@@ -11,7 +13,9 @@
   "description": "",
   "dependencies": {
     "@zohocrm/nodejs-sdk-6.0": "^4.0.0",
+    "axios": "^1.9.0",
     "dotenv": "^16.5.0",
-    "pg": "^8.15.6"
+    "pg": "^8.15.6",
+    "qs": "^6.14.0"
   }
 }

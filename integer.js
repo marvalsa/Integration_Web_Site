@@ -1,3 +1,4 @@
+require('./logs/logger'); // Importa el logger
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
@@ -49,21 +50,61 @@ class ZohoToPostgresSync {
         }
     }
 
-    // Paso 2: Ejecutar consulta COQL para obtener el proyecto [Proyectos_Inmobiliarios]
-    async getZohoProjectData(accessToken) { 
+    // // Paso 2: Ejecutar consulta COQL para obtener el proyecto [Proyectos_Inmobiliarios]
+    // async getZohoProjectData(accessToken) { 
+    //     const query = {
+    //         select_query: `
+    //         SELECT id, Name, ID_Proyecto, Tipo_Proyecto, Inmuebles_desde, Areas_desde, Direcci_n_de_proyecto, Ciudad_de_proyecto.Name, Descripci_n_tipo_documento, Especificacion_Proy 
+    //         FROM Proyectos_Inmobiliarios 
+    //         WHERE (((
+    //             ID_Proyecto = '002470701000'
+    //             and id is not null)
+    //             and Name is not null)
+    //             and Tipo_Proyecto is not null              
+    //         ) 
+    //         LIMIT 0,200
+    // `
+    //         };
+
+    //     try {
+    //         const response = await axios.post(
+    //             `${this.zohoConfig.baseURL}/coql`,
+    //             query,
+    //             {
+    //                 headers: {
+    //                     Authorization: `Zoho-oauthtoken ${accessToken}`,
+    //                     'Content-Type': 'application/json'
+    //                 }
+    //             }
+    //         );
+
+    //         const data = response.data.data;
+    //         if (!Array.isArray(data) || data.length === 0) {
+    //             throw new Error('No se encontraron proyectos');
+    //         }
+
+    //         console.log(`✅ ${data.length} proyecto(s) recuperado(s)`);
+    //         return data;
+    //     } catch (error) {
+    //         console.error('❌ Error al ejecutar COQL:', error.response?.data || error.message);
+    //         throw error;
+    //     }
+    // }
+
+    // Paso 2: Ejecutar consulta COQL con paginación new [06/05/2025]
+    async getZohoProjectData(accessToken, offset) {
         const query = {
             select_query: `
             SELECT id, Name, ID_Proyecto, Tipo_Proyecto, Inmuebles_desde, Areas_desde, Direcci_n_de_proyecto, Ciudad_de_proyecto.Name, Descripci_n_tipo_documento, Especificacion_Proy 
             FROM Proyectos_Inmobiliarios 
             WHERE (((
-                ID_Proyecto = '002470701000'
+                ID_Proyecto is not null
                 and id is not null)
                 and Name is not null)
                 and Tipo_Proyecto is not null              
             ) 
-            LIMIT 0,200
-    `
-            };
+            LIMIT ${offset},200`
+        };
 
         try {
             const response = await axios.post(
@@ -77,13 +118,16 @@ class ZohoToPostgresSync {
                 }
             );
 
-            const data = response.data.data;
-            if (!Array.isArray(data) || data.length === 0) {
-                throw new Error('No se encontraron proyectos');
-            }
+            const info = response.data.info;
+            const data = response.data.data || [];
 
-            console.log(`✅ ${data.length} proyecto(s) recuperado(s)`);
-            return data;
+            console.log(`✅ Recuperados ${data.length} registros en offset ${offset}`);
+
+            return {
+                data,
+                more: info?.more_records === true,
+                count: info?.count || 0
+            };
         } catch (error) {
             console.error('❌ Error al ejecutar COQL:', error.response?.data || error.message);
             throw error;
@@ -102,7 +146,7 @@ class ZohoToPostgresSync {
                 ) VALUES (
                     $1, $2, $3, null, null, $4,
                     $5, $6, null, $7,
-                    null, $8, $9, null
+                    125126, $8, $9, null
                 )
                 ON CONFLICT (hc) DO UPDATE SET
                     name = EXCLUDED.name,
@@ -138,27 +182,70 @@ class ZohoToPostgresSync {
         }
     }
 
-    // Paso Final: Flujo completo
+    // // Paso Final: Flujo completo
+    // async run() {
+    //     try {
+    //         console.log('\n🚀 Iniciando sincronización...');
+            
+    //         // 1. Conexión a PostgreSQL
+    //         const pgTest = await this.pool.query('SELECT 1');
+    //         if (!pgTest) throw new Error('Conexión PostgreSQL fallida');
+
+    //         // 2. Token de Zoho
+    //         const token = await this.getZohoAccessToken();
+
+    //         // 3. Obtener datos de proyectos
+    //         const projects = await this.getZohoProjectData(token);
+
+    //         // 4. Insertar en PostgreSQL
+    //         for (const project of projects) {
+    //             await this.insertProjectIntoPostgres(project);
+    //         }
+
+    //         console.log('\n✅ Sincronización finalizada correctamente');
+    //     } catch (error) {
+    //         console.error('\n🚨 Error en la sincronización:', error.message);
+    //     } finally {
+    //         await this.pool.end();
+    //     }
+    // }
+
+    // Paso Final: Flujo completo new [06/05/25]
     async run() {
         try {
             console.log('\n🚀 Iniciando sincronización...');
-            
-            // 1. Conexión a PostgreSQL
+
             const pgTest = await this.pool.query('SELECT 1');
             if (!pgTest) throw new Error('Conexión PostgreSQL fallida');
 
-            // 2. Token de Zoho
             const token = await this.getZohoAccessToken();
 
-            // 3. Obtener datos de proyectos
-            const projects = await this.getZohoProjectData(token);
+            let offset = 0;
+            let totalInsertados = 0;
 
-            // 4. Insertar en PostgreSQL
+            // Prueba controlada solo con 200 registros (puedes comentar este bloque si deseas traer todos)
+            const { data: projects } = await this.getZohoProjectData(token, 0);
             for (const project of projects) {
                 await this.insertProjectIntoPostgres(project);
             }
+            return; // salir después de primera prueba controlada
+            /*
+            // -- Traer todo con paginación (Descomentar para traer todos)            
+            while (true) {
+                const { data: projects, count } = await this.getZohoProjectData(token, offset);
+                if (projects.length === 0) break;
 
-            console.log('\n✅ Sincronización finalizada correctamente');
+                for (const project of projects) {
+                    await this.insertProjectIntoPostgres(project);
+                    totalInsertados++;
+                }
+
+                if (count < 200) break; // condición de parada
+                offset += 200;
+            }
+            
+            console.log(`\n✅ Sincronización completada. Total insertados: ${totalInsertados}`);
+            */
         } catch (error) {
             console.error('\n🚨 Error en la sincronización:', error.message);
         } finally {

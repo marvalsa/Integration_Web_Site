@@ -1,0 +1,58 @@
+# version: '3'
+# services:
+#   dev_website:
+#     build: .
+#     container_name: dev_website
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - .:/app
+#       - /app/node_modules
+#     environment:
+#       - PG_HOST=postgres
+#       - PG_DATABASE=website
+#       - PG_USER=trespiadmin
+#       - PG_PASSWORD=W3bsite3Pi2o25
+#       - PG_PORT=5432
+#       - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
+#       - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+#       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
+#     depends_on:
+#       - postgres
+#     restart: "no"  # 🔁 No reiniciar automáticamente
+
+#   postgres:
+#     image: postgres:16
+#     container_name: dev_postgres
+#     ports:
+#       - "5432:5432"
+#     environment:
+#       POSTGRES_USER: trespiadmin
+#       POSTGRES_PASSWORD: W3bsite3Pi2o25
+#       POSTGRES_DB: website
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+
+# volumes:
+#   postgres_data:
+
+
+version: '3'
+services:
+  dev_website:
+    build: .
+    container_name: dev_website
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    environment:
+      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
+      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+      - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
+      - PG_HOST=${PG_HOST}
+      - PG_DATABASE=${PG_DATABASE}
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_PORT=${PG_PORT}
+    restart: no # 🔁 No reiniciar automáticamente

@@ -1,11 +1,12 @@
 {
   "name": "websiteintegration_v1",
   "version": "1.0.0",
-  "main": "integer.js",
+  "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "integer": "node integer.js",
-    "testConnection": "node testConnection.js"
+    "start": "node src/megaProyectos.js",
+    "main": "node main.js",
+    "testConnection": "node testConexiones.js"
   },
   "keywords": [],
   "author": "",

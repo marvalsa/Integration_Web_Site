@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 8080
 
 # Comando para iniciar la aplicación
-CMD ["npm", "run", "main"]
+CMD ["npm", "run", "sync"]

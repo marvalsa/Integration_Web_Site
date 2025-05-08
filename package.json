@@ -1,11 +1,13 @@
 {
   "name": "websiteintegration_v1",
   "version": "1.0.0",
-  "main": "main.js",
+  "main": "sync.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/megaProyectos.js",
-    "main": "node main.js",
+    "megaproject": "node src/megaProyectos.js",
+    "projectatt": "node src/projectAttributes.js",
+    "project": "node src/projects.js",
+    "sync": "node sync.js",
     "testConnection": "node testConexiones.js"
   },
   "keywords": [],

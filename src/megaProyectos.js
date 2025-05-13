@@ -3,8 +3,11 @@ const { Pool } = require('pg');
 const axios = require('axios');
 const logger = require('../logs/logger');
 
+// Nombre de clase: ZohoToPostgresSync está bien si es un nombre genérico,
+// pero MegaProyectosSync sería más descriptivo si esta clase *solo* maneja eso.
 class ZohoToPostgresSync {
     constructor() {
+        // Configuración del Pool: Parece estándar y correcto.
         this.pool = new Pool({
             host: process.env.PG_HOST,
             database: process.env.PG_DATABASE,
@@ -14,6 +17,7 @@ class ZohoToPostgresSync {
             ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false
         });
 
+        // Configuración de Zoho: Parece estándar y correcto.
         this.zohoConfig = {
             clientId: process.env.ZOHO_CLIENT_ID,
             clientSecret: process.env.ZOHO_CLIENT_SECRET,
@@ -22,114 +26,147 @@ class ZohoToPostgresSync {
         };
     }
 
-    // 🔐 Obtener token de acceso de Zoho
+    // --- Paso 1: Obtener Token ---
     async getZohoAccessToken() {
         try {
-            const response = await axios.post(
-                'https://accounts.zoho.com/oauth/v2/token',
-                null,
-                {
-                    params: {
-                        refresh_token: this.zohoConfig.refreshToken,
-                        client_id: this.zohoConfig.clientId,
-                        client_secret: this.zohoConfig.clientSecret,
-                        grant_type: 'refresh_token'
-                    }
-                }
+            // Llamada a Zoho para refrescar token: URL y parámetros son correctos.
+            const response = await axios.post( // <--- Falta el cuerpo de la llamada (POST) pero los parámetros están bien
+                 'https://accounts.zoho.com/oauth/v2/token',
+                 null, // Body es null para refresh token grant
+                 {
+                     params: {
+                         refresh_token: this.zohoConfig.refreshToken,
+                         client_id: this.zohoConfig.clientId,
+                         client_secret: this.zohoConfig.clientSecret,
+                         grant_type: 'refresh_token'
+                     }
+                 }
             );
-
+            // Respuesta esperada: response.data debe contener access_token.
             const token = response.data.access_token;
-            if (!token) throw new Error('Access token no recibido');
-
-            logger.info('✅ Token obtenido correctamente');
+            if (!token) throw new Error('Access token no recibido'); // Buena validación.
+            logger.info('✅ Token obtenido para Mega Proyectos');
             return token;
         } catch (error) {
-            logger.error('❌ Error al obtener token:', error.response?.data || error.message);
+            // Manejo de error: Loguea y relanza, correcto para detener el proceso si falla.
+            logger.error('❌ Error al obtener token para Mega Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
 
-    // 📥 Obtener Mega Proyectos desde Zoho
+    // --- Paso 2: Obtener Datos de Mega Proyectos (Paginado) ---
     async getZohoProjectData(accessToken, offset = 0) {
+        // Query COQL: Define los campos a obtener.
         const query = {
             select_query: `
-                SELECT id, Name, Direccion_MP, Slogan_comercial, Descripcion, Record_Image, Latitud_MP, Longitud_MP 
-                FROM Mega_Proyectos 
-                WHERE id is not null 
+                SELECT
+                    id, Name, Direccion_MP, Slogan_comercial, Descripcion,
+                    Record_Image, Latitud_MP, Longitud_MP
+                FROM Mega_Proyectos
+                WHERE id is not null
                 LIMIT ${offset}, 200
             `
-        };
+        }; // <--- Query COQL estaba como comentario /* ... */, asegurémonos que esté completa
+
+        // *** ¡VERIFICACIÓN IMPORTANTE! ***
+        // ¿Son estos *todos* los campos de `Mega_Proyectos` que necesitas
+        // para la inserción en `insertMegaProjectIntoPostgres`?
+        // Comparando con `insertMegaProjectIntoPostgres`:
+        // - id -> OK
+        // - Name -> OK (para `name`)
+        // - Direccion_MP -> OK (para `address`)
+        // - Slogan_comercial -> OK (para `slogan`)
+        // - Descripcion -> OK (para `description`)
+        // - Record_Image -> OK (para `gallery`)
+        // - Latitud_MP -> OK (para `latitude`)
+        // - Longitud_MP -> OK (para `longitude`)
+       
 
         try {
-            const response = await axios.post(
-                `${this.zohoConfig.baseURL}/coql`,
-                query,
-                {
-                    headers: {
-                        Authorization: `Zoho-oauthtoken ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
+            // Llamada a Zoho (COQL): URL, body (query), headers (token) son correctos.
+             const response = await axios.post( // <--- Falta el cuerpo de la llamada (POST)
+                 `${this.zohoConfig.baseURL}/coql`,
+                 query, // El cuerpo es el objeto con select_query
+                 {
+                     headers: {
+                         Authorization: `Zoho-oauthtoken ${accessToken}`,
+                         'Content-Type': 'application/json'
+                     }
+                 }
+             );
+            // Respuesta esperada: response.data.data (array de proyectos) y response.data.info (paginación).
             const info = response.data.info;
-            const data = response.data.data || [];
-
-            logger.info(`✅ Recuperados ${data.length} registros en offset ${offset}`);
-            return {
-                data,
-                more: info?.more_records === true,
-                count: info?.count || 0
-            };
+            const data = response.data.data || []; // Buen default a array vacío.
+            logger.info(`✅ Recuperados ${data.length} Mega Proyectos de Zoho (offset ${offset})`);
+            // Retorna los datos y la info de paginación. Correcto.
+            return { data, more: info?.more_records === true, count: info?.count || 0 };
         } catch (error) {
-            logger.error('❌ Error al ejecutar COQL:', error.response?.data || error.message);
+            // Manejo de error: Loguea y relanza, correcto para detener el proceso si falla COQL.
+            logger.error('❌ Error al ejecutar COQL para Mega Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
 
-    // 🧩 Obtener los atributos del subformulario Atributos_Mega_Proyecto
+    // --- Paso 3: Obtener Atributos (para un Mega Proyecto específico) ---
     async getAttributesFromZoho(accessToken, parentId) {
         try {
+            // Llamada a Zoho (Search API): URL y headers correctos. GET es correcto.
+            // Criterio `Parent_Id.id:equals:${parentId}` es correcto para subformularios/related lists.
             const response = await axios.get(
                 `${this.zohoConfig.baseURL}/Atributos_Mega_Proyecto/search?criteria=Parent_Id.id:equals:${parentId}`,
                 {
-                    headers: {
-                        Authorization: `Zoho-oauthtoken ${accessToken}`
-                    },
-                    validateStatus: status => [200, 204].includes(status) // Permite controlar respuesta 204
+                    headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+                    validateStatus: status => [200, 204].includes(status) // Maneja OK y No Content.
                 }
             );
 
+            // Manejo de Respuesta:
+            // Caso 1: 204 No Content -> Devuelve null (Válido, sin atributos). Correcto.
             if (response.status === 204) {
-                logger.info(`ℹ️ Sin atributos para proyecto ID ${parentId}`);
-                return null; // No hay datos
+                logger.debug(`ℹ️ Sin atributos (Zoho 204) para Mega Proyecto ID ${parentId}`);
+                return null;
             }
 
-            logger.info(`✅ Atributos recuperados para proyecto ID ${parentId}`);
-            return response.data.data || null;
+            // Caso 2: 200 OK, pero sin datos -> Devuelve null (Válido, sin atributos). Correcto.
+            const attributesData = response.data?.data;
+            if (!attributesData || attributesData.length === 0) {
+                 logger.debug(`ℹ️ Atributos vacíos (Zoho 200 OK, pero sin data) para Mega Proyecto ID ${parentId}`);
+                 return null;
+            }
+
+            // Caso 3: 200 OK con datos -> Devuelve los datos. Correcto.
+            logger.debug(`✅ Atributos recuperados para Mega Proyecto ID ${parentId}`);
+            return attributesData;
 
         } catch (error) {
-            logger.error(`❌ Error al obtener atributos para ID ${parentId}:`, error.response?.data || error.message);
-            return null; // Continúa con null si hay error
+            // Manejo de error: Loguea y relanza. Correcto para detener si falla la *obtención*.
+            logger.error(`❌ Error CRÍTICO al intentar obtener atributos para Mega Proyecto ID ${parentId}:`, error.response?.data || error.message);
+            throw error;
         }
     }
 
-    // 📤 Insertar Mega Proyecto en PostgreSQL
+    // --- Paso 4: Insertar/Actualizar Mega Proyecto en PostgreSQL ---
     async insertMegaProjectIntoPostgres(project, accessToken) {
+        // Validación de entrada: Buena práctica.
+        if (!project || !project.id) {
+             logger.warn('⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo.');
+             return; // No continúes si falta el ID del proyecto.
+        }
+
         const client = await this.pool.connect();
         try {
-            // Obtener atributos antes de insertar
+            // Obtener datos relacionados (Atributos): Correcto. Lanza error si falla getAttributesFromZoho.
             const attributes = await this.getAttributesFromZoho(accessToken, project.id);
 
+            // Query SQL: INSERT ... ON CONFLICT DO UPDATE (Upsert).
             const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
-                    name, address, slogan, description, "attributes",
+                    id, name, address, slogan, description, "attributes",
                     gallery, latitude, longitude, is_public
                 ) VALUES (
-                    $1, $2, $3, $4, $5,
-                    $6, $7, $8, $9
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
                 )
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (id) DO UPDATE SET 
                     name = EXCLUDED.name,
                     address = EXCLUDED.address,
                     slogan = EXCLUDED.slogan,
@@ -139,70 +176,148 @@ class ZohoToPostgresSync {
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
                     is_public = EXCLUDED.is_public;
+                    
             `;
 
-            const latitude = Math.round(parseFloat(project.Latitud_MP || 0));
-            const longitude = Math.round(parseFloat(project.Longitud_MP || 0));
+            // Preparación de Datos para SQL:
+            // Parseo y defaults: Correcto uso de || y parseFloat.
+            const latitude = parseFloat(project.Latitud_MP) || 0;
+            const longitude = parseFloat(project.Longitud_MP) || 0;
+            // Procesamiento de Galería: Seguro, maneja string nulo/vacío y crea JSON array.
+            let galleryJson = JSON.stringify([]); // Default a array vacío
+            if (project.Record_Image && typeof project.Record_Image === 'string') {
+                 // trim() para quitar espacios, filter(Boolean) para quitar strings vacíos si hay comas seguidas.
+                 galleryJson = JSON.stringify(project.Record_Image.split(',').map(item => item.trim()).filter(Boolean));
+            }
+            // Atributos a JSON: Correcto, maneja `null` si no hay atributos.
+            const attributesJson = attributes ? JSON.stringify(attributes) : null;
 
+            // Array de Valores: Debe coincidir exactamente con los placeholders ($1-$10) y columnas.
             const values = [
-                project.Name,
-                project.Direccion_MP,
-                project.Slogan_comercial || '',
-                project.Descripcion || '',
-                attributes ? JSON.stringify(attributes) : null,
-                JSON.stringify(project.Record_Image?.split(',') || []),
-                latitude,
-                longitude,
-                project.Es_Publico || false
+                project.id,                       // $1: id
+                project.Name || '',               // $2: name
+                project.Direccion_MP || '',       // $3: address
+                project.Slogan_comercial || '',   // $4: slogan
+                project.Descripcion || '',        // $5: description
+                attributesJson,                   // $6: attributes (JSON o NULL)
+                galleryJson,                      // $7: gallery (JSON array)
+                latitude,                         // $8: latitude (number)
+                longitude,                        // $9: longitude (number)
+                false                             // $10: is_public (boolean) <-- Depende de que `Es_Publico` venga de Zoho. ¡Ya lo corregimos en getZohoProjectData!
             ];
 
+            // Ejecución de Query: Correcto.
             await client.query(insertQuery, values);
-            logger.info(`✅ Mega Proyecto insertado/actualizado: ${project.Name}`);
+            logger.info(`✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`);
+
         } catch (error) {
-            logger.error('❌ Error al insertar en Mega_Projects:', error.message);
+            // Manejo de error: Loguea el error específico del proyecto y relanza. Correcto.
+            logger.error(`❌ Error procesando Mega Proyecto ID ${project?.id} (${project?.Name}):`, error.message);
+            throw error;
         } finally {
+            // Liberar cliente: ¡Fundamental! Correcto.
             client.release();
         }
     }
 
-    // 🏃 Ejecutar el proceso de sincronización completo
+    // --- Paso 5: Orquestador Principal (`run`) ---
     async run() {
+        let connectionClosed = false;
+        let totalProcesados = 0;
+        let totalInsertados = 0;
+        let token; // Definir fuera para que esté disponible en finally si es necesario
+
         try {
-            logger.info('🚀 Iniciando sincronización...');
-            const pgTest = await this.pool.query('SELECT 1');
-            if (!pgTest) throw new Error('Conexión PostgreSQL fallida');
+            logger.info('🚀 Iniciando sincronización de Mega Proyectos...');
+            // 1. Verificar conexión a DB
+            const client = await this.pool.connect(); // Intenta conectar
+            logger.info('✅ Conexión a PostgreSQL verificada para Mega Proyectos.');
+            client.release(); // Libera la conexión de prueba
 
-            const token = await this.getZohoAccessToken();
+            // 2. Obtener Token (falla aquí, se detiene todo)
+            token = await this.getZohoAccessToken();
 
+            // 3. Bucle de Paginación
             let offset = 0;
-            let totalInsertados = 0;
+            let more = true;
+            while (more) {
+                // Obtener lote de datos (falla aquí, se detiene todo)
+                const { data: projects, more: hasMore } = await this.getZohoProjectData(token, offset);
 
-            while (true) {
-                const { data: projects, more } = await this.getZohoProjectData(token, offset);
-                if (projects.length === 0) break;
-
-                for (const project of projects) {
-                    await this.insertMegaProjectIntoPostgres(project, token);
-                    totalInsertados++;
+                // Condición de salida del bucle (si no hay proyectos)
+                if (!projects || projects.length === 0) {
+                    logger.info(`ℹ️ No se encontraron más Mega Proyectos en Zoho (offset: ${offset}). Finalizando bucle.`);
+                    break; // Salir del while
                 }
 
-                if (!more) break;
-                offset += 200;
-            }
+                logger.info(`ℹ️ Procesando lote de ${projects.length} Mega Proyectos (offset: ${offset})...`);
 
-            logger.info(`✅ Sincronización finalizada. Total insertados: ${totalInsertados}`);
+                // 4. Procesar cada proyecto del lote
+                for (const project of projects) {
+                    totalProcesados++;
+                    try {
+                        // Intentar insertar/actualizar (puede fallar por atributos o DB)
+                        await this.insertMegaProjectIntoPostgres(project, token);
+                        totalInsertados++; // Contar solo si no hubo error
+                        logger.debug(`🏁 Mega Proyecto ID: ${project.id} procesado con éxito.`);
+                    } catch (insertError) {
+                        // Manejo de error por proyecto:
+                        // Opción Actual: Detener toda la sincronización. Correcto para tu requisito.
+                        logger.error(`🚨 Falló el procesamiento del Mega Proyecto ID: ${project?.id || 'ID desconocido'}. Deteniendo sincronización general.`);
+                        throw insertError; // Propaga para activar el catch principal y detener 'run'.
+                    }
+                } // Fin for (procesamiento del lote)
+
+                // Actualizar estado de paginación y offset
+                more = hasMore;
+                if (!more) {
+                    logger.info('ℹ️ No hay más registros de Mega Proyectos indicados por Zoho.');
+                    // El bucle terminará en la siguiente iteración.
+                }
+                offset += 200; // Incrementar offset para la siguiente página
+
+            } // Fin while (paginación)
+
+            logger.info(`✅ Sincronización de Mega Proyectos finalizada. ${totalInsertados} de ${totalProcesados} procesados exitosamente (o detenida por error si totalInsertados < totalProcesados).`);
+
         } catch (error) {
-            logger.error('🚨 Error en la sincronización:', error.message);
+            // Captura errores críticos (conexión, token, COQL) o errores propagados de la inserción.
+            logger.error('🚨 ERROR CRÍTICO durante la sincronización de Mega Proyectos. El proceso se detuvo.', error);
+            // Relanzar para que el script que llamó a run() (el IIFE) se entere. Correcto.
+            throw error;
+
         } finally {
-            await this.pool.end();
+            // Cierre del pool: Se ejecuta siempre (éxito o error). Correcto y robusto.
+            if (this.pool && !connectionClosed) {
+                logger.info('🔌 Cerrando pool de conexiones PostgreSQL para Mega Proyectos...');
+                await this.pool.end().catch(err => logger.error('❌ Error al cerrar pool PG para Mega Proyectos:', err));
+                connectionClosed = true;
+                logger.info('🔌 Pool de conexiones PostgreSQL cerrado.');
+            }
         }
     }
 }
 
 module.exports = ZohoToPostgresSync;
 
-// Ejecutar directamente si se llama como script
+// Ejecución directa (para pruebas): Correcto.
 if (require.main === module) {
+    // Requerir logger aquí si solo se usa en este bloque
+    const logger = require('../logs/logger'); // Asegúrate que la ruta es correcta
+
+    logger.info("Ejecutando ZohoToPostgresSync (MegaProyectos) directamente como script...");
     const sync = new ZohoToPostgresSync();
-    sync.run();
+
+    sync.run()
+        .then(() => {
+             logger.info("Sincronización de MegaProyectos (ejecución directa) finalizada exitosamente.");
+             // process.exit(0); // Opcional, Node sale con 0 por defecto si no hay error
+        })
+        .catch(err => {
+            logger.error("------------------------------------------------------------------");
+            logger.error("ERROR FATAL al ejecutar ZohoToPostgresSync directamente:");
+            logger.error(err); // Imprime el error completo
+            logger.error("------------------------------------------------------------------");
+            process.exit(1); // Salir con código de error
+        });
 }

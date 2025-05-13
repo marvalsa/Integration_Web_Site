@@ -1,10 +1,3 @@
-# FROM node:18-alpine
-# WORKDIR /app
-# COPY package*.json ./
-# RUN npm install --production
-# COPY . .
-# CMD ["npm", "run", "main"]
-
 # Usamos la imagen oficial de Node.js basada en Alpine (más ligera)
 FROM node:18-alpine
 
@@ -14,14 +7,15 @@ WORKDIR /app
 # Copiar package.json y package-lock.json primero para aprovechar el caché de Docker
 COPY package*.json ./
 
-# Instalar dependencias en modo producción (evitar dependencias de desarrollo)
+# Instalar SOLAMENTE dependencias de producción
 RUN npm install --production
 
 # Copiar todos los archivos de la aplicación al contenedor
+# Esto incluye tu carpeta 'src', 'logs' (si existe localmente y la necesitas copiar), etc.
 COPY . .
 
-# Exponer el puerto que la aplicación estará escuchando (asegúrate de que sea el correcto)
-EXPOSE 8080
+# No necesitas EXPOSE si el script no es un servidor web
+# EXPOSE 8080
 
-# Comando para iniciar la aplicación
+# Comando para iniciar el script de sincronización definido en package.json
 CMD ["npm", "run", "sync"]

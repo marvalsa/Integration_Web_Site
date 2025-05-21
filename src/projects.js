@@ -47,8 +47,7 @@ class ZohoToPostgresSyncProjects {
     }
 
     async getZohoProjects(accessToken, offset = 0) {
-        // *** COQL QUERY COMPLETA Y CORRECTA PARA Proyectos_Comerciales ***
-        const coqlQueryObject = { // Cambié el nombre de la variable para evitar confusión con 'query' de SQL
+        const coqlQueryObject = {
             select_query: `
                 SELECT
                     id, Name, Slogan, Direccion, Descripcion_corta, Descripcion_larga,
@@ -61,13 +60,11 @@ class ZohoToPostgresSyncProjects {
                 LIMIT ${offset}, 200
             `
         };
-        // NOTA: Asegúrate que el campo 'is_public' exista en tu módulo `Proyectos_Comerciales` en Zoho CRM.        
 
         try {
-            // *** LLAMADA AXIOS COMPLETA ***
             const response = await axios.post(
                 `${this.zohoConfig.baseURL}/coql`,
-                coqlQueryObject, // El cuerpo de la petición es el objeto con la select_query
+                coqlQueryObject,
                 {
                     headers: {
                         Authorization: `Zoho-oauthtoken ${accessToken}`,
@@ -75,9 +72,8 @@ class ZohoToPostgresSyncProjects {
                     }
                 }
             );
-            // Manejo de la respuesta:
             const info = response.data.info;
-            const data = response.data.data || []; // Default a array vacío
+            const data = response.data.data || [];
             logger.info(`✅ Recuperados ${data.length} proyectos de Zoho (offset ${offset})`);
             return { data, more: info?.more_records === true, count: info?.count || 0 };
         } catch (error) {
@@ -100,15 +96,20 @@ class ZohoToPostgresSyncProjects {
 
             if (response.status === 204) {
                 logger.debug(`ℹ️ Sin atributos (Zoho 204) para proyecto ID ${parentId} (módulo Atributos)`);
-                return null;
+                return null; // Si no hay atributos, devolvemos null como antes.
             }
             const attributesData = response.data?.data;
             if (!attributesData || attributesData.length === 0) {
                  logger.debug(`ℹ️ Atributos vacíos (Zoho 200 OK, pero sin data) para proyecto ID ${parentId} (módulo Atributos)`);
-                 return null;
+                 return null; // Si la data está vacía, devolvemos null.
             }
             logger.debug(`✅ Atributos recuperados (${attributesData.length}) para proyecto ID ${parentId} (módulo Atributos)`);
-            return attributesData;
+            
+            // MODIFICACIÓN: Extraer solo los IDs de los atributos
+            const attributeIds = attributesData.map(attribute => attribute.id);
+            
+            return attributeIds; // Devolver el array de IDs
+
         } catch (error) {
             logger.error(`❌ Error crítico al obtener atributos (módulo Atributos) para proyecto ID ${parentId}:`, error.response?.data || error.message);
             throw error;
@@ -117,15 +118,17 @@ class ZohoToPostgresSyncProjects {
 
     async insertProjectIntoPostgres(project, accessToken) {
         if (!project || !project.id) {
-             logger.warn('⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo.');
-             return;
+            logger.warn('⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo.');
+            return { success: false, hc: null, errorType: 'invalid_data' };
         }
 
         const client = await this.pool.connect();
-        try {
-            const attributes = await this.getProjectAttributes(accessToken, project.id);
+        const hcValue = project.id;
 
-            // Query SQL: (Añadido updated_at para buena práctica)
+        try {
+            // Obtendrá un array de IDs o null
+            const attributeIdsArray = await this.getProjectAttributes(accessToken, project.id);
+
             const insertQuery = `
                 INSERT INTO public."Projects" (
                     hc, name, slogan, address, small_description, long_description, sic,
@@ -136,91 +139,65 @@ class ZohoToPostgresSyncProjects {
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
                 )
                 ON CONFLICT (hc) DO UPDATE SET
-                    name = EXCLUDED.name, 
-                    slogan = EXCLUDED.slogan, 
-                    address = EXCLUDED.address,
-                    small_description = EXCLUDED.small_description, 
-                    long_description = EXCLUDED.long_description,
-                    sic = EXCLUDED.sic, 
-                    sales_room_name = EXCLUDED.sales_room_name,
-                    salary_minimum_count = EXCLUDED.salary_minimum_count, 
-                    discount_description = EXCLUDED.discount_description,
-                    price_from_general = EXCLUDED.price_from_general, 
-                    price_up_general = EXCLUDED.price_up_general,
-                    "type" = EXCLUDED.type, 
-                    mega_project_id = EXCLUDED.mega_project_id, 
-                    status = EXCLUDED.status,
-                    highlighted = EXCLUDED.highlighted, 
-                    built_area = EXCLUDED.built_area, 
-                    private_area = EXCLUDED.private_area,
-                    rooms = EXCLUDED.rooms, 
-                    bathrooms = EXCLUDED.bathrooms, 
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude, 
-                    is_public = EXCLUDED.is_public, 
-                    "attributes" = EXCLUDED.attributes;
-                   
+                    name = EXCLUDED.name, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
+                    small_description = EXCLUDED.small_description, long_description = EXCLUDED.long_description,
+                    sic = EXCLUDED.sic, sales_room_name = EXCLUDED.sales_room_name,
+                    salary_minimum_count = EXCLUDED.salary_minimum_count, discount_description = EXCLUDED.discount_description,
+                    price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
+                    "type" = EXCLUDED.type, mega_project_id = EXCLUDED.mega_project_id, status = EXCLUDED.status,
+                    highlighted = EXCLUDED.highlighted, built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area,
+                    rooms = EXCLUDED.rooms, bathrooms = EXCLUDED.bathrooms, latitude = EXCLUDED.latitude,
+                    longitude = EXCLUDED.longitude, is_public = EXCLUDED.is_public, "attributes" = EXCLUDED.attributes;
             `;
 
-            const hcValue = project.id;
             const megaProjectId = project['Mega_Proyecto.id'] || null;
             const latitude = parseFloat(project.Latitud) || 0;
             const longitude = parseFloat(project.Longitud) || 0;
             const builtArea = parseFloat(project.Area_construida_desde) || 0;
-            // IMPORTANTE: Verifica la fuente de 'privateArea'.
-            // Si 'Area_privada' es un campo distinto en Zoho, selecciónalo en getZohoProjects y úsalo aquí.
-            // Ejemplo: const privateArea = parseFloat(project.Area_privada_Zoho) || 0;
             const privateArea = parseFloat(project.Area_construida_hasta) || 0;
             const roomsValue = Array.isArray(project.Habitaciones)
-                               ? Math.max(0, ...project.Habitaciones.map(n => parseInt(n, 10)).filter(Number.isFinite))
-                               : parseInt(project.Habitaciones, 10) || 0;
+                            ? Math.max(0, ...project.Habitaciones.map(n => parseInt(n, 10)).filter(Number.isFinite))
+                            : parseInt(project.Habitaciones, 10) || 0;
             const bathroomsValue = Array.isArray(project['Ba_os'])
-                               ? Math.max(0, ...project['Ba_os'].map(n => parseInt(n, 10)).filter(Number.isFinite))
-                               : parseInt(project['Ba_os'], 10) || 0;
-            const attributesJson = attributes ? JSON.stringify(attributes) : null;
+                            ? Math.max(0, ...project['Ba_os'].map(n => parseInt(n, 10)).filter(Number.isFinite))
+                            : parseInt(project['Ba_os'], 10) || 0;
+            
+            // Si attributeIdsArray es null, attributesJson será null.
+            // Si es un array (incluso vacío []), se convertirá a su representación JSON ("[]" o "[\"id1\", \"id2\"]")
+            const attributesJson = attributeIdsArray ? JSON.stringify(attributeIdsArray) : null;
 
-            // Los valores deben coincidir con los placeholders de la query (sin incluir CURRENT_TIMESTAMP explícitamente aquí)
             const values = [
-                hcValue, 
-                project.Name || '', 
-                project.Slogan || '', 
-                project.Direccion || '',
-                project.Descripcion_corta || '', 
-                project.Descripcion_larga || '', 
-                project.SIG || '',
-                project['Sala_de_ventas.Name'] || '', 
-                parseInt(project.Cantidad_SMMLV, 10) || 0,
-                project.Descripcion_descuento || '', 
-                parseFloat(project.Precios_desde) || 0,
-                parseFloat(project.Precios_hasta) || 0, 
-                project.Tipo_de_proyecto || '',
-                megaProjectId, 
-                project.Estado ? JSON.stringify(project.Estado) : null,
-                project.Proyecto_destacado || false, 
-                builtArea, 
-                privateArea,
-                roomsValue, 
-                bathroomsValue, 
-                latitude, 
-                longitude,
-                false, // Depende de que 'is_public' se obtenga de Zoho module o se establezca manualmente
-                attributesJson
+                hcValue, project.Name || '', project.Slogan || '', project.Direccion || '',
+                project.Descripcion_corta || '', project.Descripcion_larga || '', project.SIG || '',
+                project['Sala_de_ventas.Name'] || '', parseInt(project.Cantidad_SMMLV, 10) || 0,
+                project.Descripcion_descuento || '', parseFloat(project.Precios_desde) || 0,
+                parseFloat(project.Precios_hasta) || 0, project.Tipo_de_proyecto || '',
+                megaProjectId, project.Estado ? JSON.stringify(project.Estado) : null,
+                project.Proyecto_destacado || false, builtArea, privateArea,
+                roomsValue, bathroomsValue, latitude, longitude,
+                false, attributesJson // Aquí se guarda el JSON del array de IDs o null
             ];
 
             await client.query(insertQuery, values);
             logger.info(`✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`);
+            return { success: true, hc: hcValue };
 
         } catch (error) {
-            logger.error(`❌ Error crítico procesando proyecto HC ${project?.id} (${project?.Name}):`, error.message);
-            throw error;
+            if (error.code === '23503' && error.constraint === 'Projects_mega_project_id_fkey') {
+                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_mega_project_id_fkey'. El mega_project_id '${project['Mega_Proyecto.id']}' no existe en "Mega_Projects".`);
+                return { success: false, hc: hcValue, errorType: 'foreign_key_violation', constraint: 'Projects_mega_project_id_fkey', value: project['Mega_Proyecto.id'] };
+            } else if (error.code === '23505' && error.constraint === 'Projects_pkey') {
+                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de PK 'Projects_pkey'. Este HC ya existe y la lógica ON CONFLICT debería haberlo manejado. Revisar. Error: ${error.message}`);
+                return { success: false, hc: hcValue, errorType: 'primary_key_violation', constraint: 'Projects_pkey' };
+            }
+            logger.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error.message);
+            return { success: false, hc: hcValue, errorType: 'other_db_error', message: error.message };
         } finally {
             client.release();
         }
     }
 
     async getTypologiesFromZoho(accessToken, parentId) {
-        // *** LLAMADA AXIOS COMPLETA PARA OBTENER TIPOLOGÍAS ***
-        // Asume que el módulo de tipologías se llama 'Tipologias' y el campo de relación es 'Parent_Id'
         try {
             const response = await axios.get(
                 `${this.zohoConfig.baseURL}/Tipologias/search?criteria=(Parent_Id.id:equals:${parentId})`,
@@ -232,7 +209,7 @@ class ZohoToPostgresSyncProjects {
 
             if (response.status === 204 || !response.data?.data || response.data.data.length === 0) {
                 logger.debug(`ℹ️ Sin tipologías (Zoho 204 o sin data) para proyecto ID ${parentId} (módulo Tipologias)`);
-                return []; // Devuelve array vacío si no hay tipologías
+                return [];
             }
             const typologiesData = response.data.data;
             logger.debug(`✅ Tipologías recuperadas (${typologiesData.length}) para proyecto ID ${parentId} (módulo Tipologias)`);
@@ -261,7 +238,6 @@ class ZohoToPostgresSyncProjects {
                 }
                 currentTypologyName = t.Nombre || t.id;
 
-                // Query SQL: (Añadido updated_at)
                 const insertQuery = `
                     INSERT INTO public."Typologies" (
                         id, project_id, "name", description, price_from, price_up,
@@ -279,28 +255,24 @@ class ZohoToPostgresSyncProjects {
                         private_area = EXCLUDED.private_area,
                         plans = EXCLUDED.plans,
                         gallery = EXCLUDED.gallery;
-
                 `;
 
-                // Verifica los nombres de campo en Zoho para tipologías:
-                // t.Nombre, t.Descripci_n (¿con tilde?), t.Precio_desde, t.Habitaciones, t.Ba_os, t.Area_construida, t.Area_privada
                 const builtAreaTyp = parseFloat(t.Area_construida) || 0;
                 const privateAreaTyp = parseFloat(t.Area_privada) || 0;
 
-                // Valores para la query (sin incluir CURRENT_TIMESTAMP explícitamente)
                 const values = [
                     t.id, 
                     projectHc, 
                     t.Nombre || '', 
-                    t.Descripci_n || '', // ¡Verifica t.Descripci_n!
+                    t.Descripci_n || '',
                     parseFloat(t.Precio_desde) || 0,
-                    0, // price_up - ¿Este valor es siempre 0 o debe venir de Zoho?
+                    0, 
                     parseInt(t.Habitaciones, 10) || 0, 
                     parseInt(t.Ba_os, 10) || 0,
                     builtAreaTyp, 
                     privateAreaTyp,
-                    null, // plans
-                    null // gallery
+                    null, 
+                    null 
                 ];
 
                 await client.query(insertQuery, values);
@@ -318,8 +290,9 @@ class ZohoToPostgresSyncProjects {
 
     async run() {
         let connectionClosed = false;
-        let totalProyectosProcesados = 0;
-        let totalProyectosFallidos = 0;
+        let totalProyectosZoho = 0;
+        let proyectosProcesadosConExito = 0;
+        const proyectosFallidosDetalles = [];
         let token;
 
         try {
@@ -333,31 +306,61 @@ class ZohoToPostgresSyncProjects {
             let more = true;
 
             while (more) {
-                const { data: projects, more: hasMore } = await this.getZohoProjects(token, offset);
-                if (!projects || projects.length === 0) {
-                     logger.info(`ℹ️ No se encontraron más Proyectos en Zoho (offset: ${offset}). Finalizando bucle.`);
-                     break;
+                const { data: projectsFromZoho, more: hasMore, count } = await this.getZohoProjects(token, offset);
+                if (offset === 0 && count) {
+                    logger.info(`ℹ️ Zoho reporta un total aproximado de ${count} proyectos.`);
                 }
 
-                logger.info(`ℹ️ Procesando lote de ${projects.length} Proyectos (offset: ${offset})...`);
+                if (!projectsFromZoho || projectsFromZoho.length === 0) {
+                    logger.info(`ℹ️ No se encontraron más Proyectos en Zoho (offset: ${offset}). Finalizando bucle de obtención.`);
+                    break;
+                }
+                
+                totalProyectosZoho += projectsFromZoho.length;
+                logger.info(`ℹ️ Procesando lote de ${projectsFromZoho.length} Proyectos de Zoho (offset: ${offset})...`);
 
-                for (const project of projects) {
-                    totalProyectosProcesados++;
+                for (const project of projectsFromZoho) {
                     try {
                         if (!project || !project.id) {
                             logger.warn(`⚠️ Proyecto inválido o sin ID en lote de Zoho (offset: ${offset}). Omitiendo.`);
-                            totalProyectosFallidos++;
+                            proyectosFallidosDetalles.push({
+                                hc: project?.id || 'ID Desconocido',
+                                name: project?.Name || 'Nombre Desconocido',
+                                reason: 'Datos inválidos o sin ID desde Zoho.',
+                                details: 'El objeto del proyecto estaba malformado o le faltaba el ID.'
+                            });
                             continue;
                         }
+
                         logger.debug(`⏳ Procesando Proyecto HC: ${project.id} (${project.Name})...`);
-                        await this.insertProjectIntoPostgres(project, token);
-                        const typologies = await this.getTypologiesFromZoho(token, project.id);
-                        await this.insertTypologies(project.id, project.id, typologies); // projectIdZoho no se usa en insertTypologies
-                        logger.debug(`🏁 Proyecto HC: ${project.id} (${project.Name}) procesado con éxito.`);
-                    } catch (projectError) {
-                        totalProyectosFallidos++;
-                        logger.error(`🚨 Falló el procesamiento completo del Proyecto HC: ${project?.id || 'ID desconocido'}. Deteniendo sincronización general.`);
-                        throw projectError;
+                        
+                        const insertResult = await this.insertProjectIntoPostgres(project, token);
+
+                        if (insertResult.success) {
+                            const typologies = await this.getTypologiesFromZoho(token, project.id);
+                            if (typologies && typologies.length > 0) {
+                                await this.insertTypologies(project.id, project.id, typologies);
+                            }
+                            logger.debug(`🏁 Proyecto HC: ${project.id} (${project.Name}) y sus tipologías procesados con éxito.`);
+                            proyectosProcesadosConExito++;
+                        } else {
+                            logger.warn(`🚨 Proyecto HC: ${project.id} (${project.Name}) NO fue procesado en DB. Razón: ${insertResult.errorType}. Ver logs anteriores.`);
+                            proyectosFallidosDetalles.push({
+                                hc: project.id,
+                                name: project.Name,
+                                reason: `Fallo al insertar/actualizar en DB: ${insertResult.errorType}`,
+                                details: insertResult.constraint ? `Constraint: ${insertResult.constraint}, Valor: ${insertResult.value}` : insertResult.message || 'Error desconocido en DB'
+                            });
+                        }
+
+                    } catch (errorInternoAlProcesarProyecto) {
+                        logger.error(`🚨 Error INESPERADO procesando el ciclo del Proyecto HC: ${project?.id || 'ID desconocido'}. Este proyecto se marcará como fallido. Error: ${errorInternoAlProcesarProyecto.message}`);
+                        proyectosFallidosDetalles.push({
+                            hc: project?.id || 'ID Desconocido',
+                            name: project?.Name || 'Nombre Desconocido',
+                            reason: 'Error inesperado durante el procesamiento del proyecto (ej. tipologías).',
+                            details: errorInternoAlProcesarProyecto.stack
+                        });
                     }
                 }
 
@@ -369,15 +372,27 @@ class ZohoToPostgresSyncProjects {
             }
 
             logger.info('✅ Sincronización de Proyectos y Tipologías finalizada.');
-            logger.info(`📊 Resumen: ${totalProyectosProcesados} proyectos intentados, ${totalProyectosFallidos} fallidos.`);
-            if (totalProyectosFallidos > 0) {
-                 logger.warn(`⚠️ La sincronización finalizó, pero ${totalProyectosFallidos} proyectos encontraron errores (deteniendo el proceso).`);
+            logger.info('------------------- RESUMEN DE SINCRONIZACIÓN -------------------');
+            logger.info(`📊 Total de proyectos recuperados de Zoho: ${totalProyectosZoho}`);
+            logger.info(`✅ Proyectos procesados con éxito (insertados/actualizados en DB): ${proyectosProcesadosConExito}`);
+            logger.info(`❌ Proyectos con errores (omitidos o con fallos): ${proyectosFallidosDetalles.length}`);
+
+            if (proyectosFallidosDetalles.length > 0) {
+                logger.warn("⚠️ Detalles de los proyectos con errores:");
+                proyectosFallidosDetalles.forEach(fallo => {
+                    logger.warn(`  - HC: ${fallo.hc}, Nombre: ${fallo.name}, Razón: ${fallo.reason}${fallo.details ? `, Detalles: ${fallo.details}` : ''}`);
+                });
+                logger.warn("--------------------------------------------------------------------");
+            } else if (totalProyectosZoho > 0) {
+                logger.info("🎉 Todos los proyectos de Zoho se procesaron exitosamente.");
             } else {
-                 logger.info("🎉 Todos los proyectos se procesaron exitosamente.");
+                logger.info("ℹ️ No se encontraron proyectos en Zoho para procesar.");
             }
-        } catch (error) {
-            logger.error('🚨 ERROR CRÍTICO durante la sincronización de Proyectos/Tipologías. El proceso se detuvo.', error);
-            throw error;
+            logger.info('--------------------------------------------------------------------');
+
+        } catch (errorGeneral) {
+            logger.error('🚨 ERROR CRÍTICO GENERAL durante la sincronización de Proyectos/Tipologías. El proceso se detuvo.', errorGeneral);
+            throw errorGeneral;
         } finally {
             if (this.pool && !connectionClosed) {
                 logger.info('🔌 Cerrando pool de conexiones PostgreSQL para Proyectos...');
@@ -391,9 +406,11 @@ class ZohoToPostgresSyncProjects {
 
 module.exports = ZohoToPostgresSyncProjects;
 
+// Bloque para ejecución directa (si es necesario)
 if (require.main === module) {
-    const logger = require('../logs/logger');
-    const ZohoToPostgresSyncProjects = require('./projects');
+    // Asegúrate de que logger está definido si no lo importas arriba de la clase
+    // const logger = require('../logs/logger'); // Ya está arriba
+    // const ZohoToPostgresSyncProjects = require('./projects'); // Si el archivo se llama 'projects.js'
 
     logger.info("Ejecutando ZohoToPostgresSyncProjects directamente como script...");
     const sync = new ZohoToPostgresSyncProjects();
@@ -406,7 +423,7 @@ if (require.main === module) {
         .catch(error => {
             logger.error("--------------------------------------------------------------------");
             logger.error("ERROR FATAL en la ejecución directa de ZohoToPostgresSyncProjects:");
-            logger.error(error);
+            logger.error(error); // Imprime el error completo, incluyendo stack trace si está disponible
             logger.error("--------------------------------------------------------------------");
             process.exit(1);
         });

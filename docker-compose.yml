@@ -90,6 +90,9 @@ services:
       postgres: # Asegura que el servicio 'postgres' se inicie antes
         condition: service_healthy # (Opcional pero recomendado) Espera a que PG esté listo
     restart: "no" # 🔁 No reiniciar automáticamente, es una tarea puntual
+    # Agregar logs_output como volumen
+    # volumes: 
+    #   - ./logs_output:/app/logs # Mapea ./logs_output en tu host a /app/logs en el contenedor
 
   # Servicio de Base de Datos PostgreSQL
   postgres:

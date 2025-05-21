@@ -1,13 +1,13 @@
 # node_modules
 # .env
-# .git
+.git
 # *.log
 # Dockerfile
 # docker-compose.yml
 
 # Ignorar los archivos y carpetas del editor
 .vscode/
-.idea/
+
 *.iml
 
 # Ignorar dependencias locales
@@ -28,3 +28,5 @@ Thumbs.db
 # Ignorar carpetas de base de datos
 *.sql
 *.db
+#  Ignorar archivos de configuración de la aplicación
+logs_output/

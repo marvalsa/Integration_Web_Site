@@ -63,7 +63,7 @@ class ZohoToPostgresSync {
                     id, Name, Direccion_MP, Slogan_comercial, Descripcion,
                     Record_Image, Latitud_MP, Longitud_MP
                 FROM Mega_Proyectos
-                WHERE id is not null
+                WHERE Mega_proyecto_comercial = true
                 LIMIT ${offset}, 200
             `
         }; // <--- Query COQL estaba como comentario /* ... */, asegurémonos que esté completa

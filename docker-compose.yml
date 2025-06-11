@@ -57,63 +57,56 @@
 #       - PG_PORT=${PG_PORT}
 #     restart: no # 🔁 No reiniciar automáticamente
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-version: '3.8' # Usar una versión más reciente como 3.8 si es posible
+version: '3.8'
 
 services:
   # Servicio para ejecutar el script de sincronización Node.js
-  sync_job: # Renombrado para mayor claridad (antes dev_website)
-    build: . # Construye la imagen usando el Dockerfile local
-    container_name: sync_job_runner # Nombre opcional
-    # No necesitas 'ports' porque el script no escucha conexiones
-    # ports:
-    #   - "3000:3000"
-    # No montes el volumen local '.' para un script de ejecución,
-    # queremos usar el código COPIADO en la imagen durante el build.
-    # Los montajes son para desarrollo con hot-reload.
-    # volumes:
-    #   - .:/app
-    #   - /app/node_modules # Tampoco necesario sin el montaje de '.'
+  sync_job:
+    build: .
+    container_name: sync_job_runner
     environment:
-      # Carga las variables desde el archivo .env o el entorno del host
+      # ... (tu environment no cambia) ...
       - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
       - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
-      - PG_HOST=${PG_HOST} # Debería ser 'postgres' según .env
+      - PG_HOST=${PG_HOST}
       - PG_DATABASE=${PG_DATABASE}
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_PORT=${PG_PORT}
-      - PG_SSL=${PG_SSL} # Añadido por si lo necesitas
-      # - NODE_ENV=production # Puedes añadir esto si tu script lo usa
+      - PG_SSL=${PG_SSL}
+    
+    # ***************************************************************
+    # *****               AQUÍ ESTÁ EL AJUSTE [11/06/25]         *****
+    # ***************************************************************
+    volumes:
+      # Mapea la carpeta './logs_output' de tu proyecto local
+      # a la carpeta '/app/logs' dentro del contenedor.
+      - ./logs:/app/logs
+    # ***************************************************************
+
     depends_on:
-      postgres: # Asegura que el servicio 'postgres' se inicie antes
-        condition: service_healthy # (Opcional pero recomendado) Espera a que PG esté listo
-    restart: "no" # 🔁 No reiniciar automáticamente, es una tarea puntual
-    # Agregar logs_output como volumen
-    # volumes: 
-    #   - ./logs_output:/app/logs # Mapea ./logs_output en tu host a /app/logs en el contenedor
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   # Servicio de Base de Datos PostgreSQL
   postgres:
     image: postgres:16
-    container_name: dev_postgres_sync # Nombre único
+    container_name: dev_postgres_sync
     ports:
-      # Exponer el puerto al host es útil para conectar herramientas de BD externas
-      - "5433:5432" # Usar un puerto diferente en el host (5433) si 5432 ya está ocupado
+      - "5433:5432"
     environment:
-      # Estas credenciales DEBEN COINCIDIR con las usadas por la app (PG_USER, PG_PASSWORD, PG_DATABASE)
-      POSTGRES_USER: ${PG_USER} # Mejor usar variables también aquí
+      POSTGRES_USER: ${PG_USER}
       POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: ${PG_DATABASE}
     volumes:
-      - postgres_sync_data:/var/lib/postgresql/data # Volumen para persistir datos
-    healthcheck: # (Opcional pero recomendado) Define cómo comprobar si PG está listo
+      - postgres_sync_data:/var/lib/postgresql/data
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DATABASE}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-# Definir el volumen nombrado para persistencia de datos de PG
 volumes:
   postgres_sync_data:

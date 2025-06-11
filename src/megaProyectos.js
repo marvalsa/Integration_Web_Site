@@ -147,18 +147,15 @@ class ZohoToPostgresSync {
 
     // --- Paso 4: Insertar/Actualizar Mega Proyecto en PostgreSQL ---
     async insertMegaProjectIntoPostgres(project, accessToken) {
-        // Validación de entrada: Buena práctica.
         if (!project || !project.id) {
-             logger.warn('⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo.');
-             return; // No continúes si falta el ID del proyecto.
+            logger.warn('⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo.');
+            return;
         }
 
         const client = await this.pool.connect();
         try {
-            // Obtener datos relacionados (Atributos): Correcto. Lanza error si falla getAttributesFromZoho.
             const attributes = await this.getAttributesFromZoho(accessToken, project.id);
 
-            // Query SQL: INSERT ... ON CONFLICT DO UPDATE (Upsert).
             const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
                     id, name, address, slogan, description, "attributes",
@@ -176,46 +173,57 @@ class ZohoToPostgresSync {
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
                     is_public = EXCLUDED.is_public;
-                    
             `;
 
-            // Preparación de Datos para SQL:
-            // Parseo y defaults: Correcto uso de || y parseFloat.
             const latitude = parseFloat(project.Latitud_MP) || 0;
             const longitude = parseFloat(project.Longitud_MP) || 0;
-            // Procesamiento de Galería: Seguro, maneja string nulo/vacío y crea JSON array.
-            let galleryJson = JSON.stringify([]); // Default a array vacío
+            
+            let galleryJson = JSON.stringify([]);
             if (project.Record_Image && typeof project.Record_Image === 'string') {
-                 // trim() para quitar espacios, filter(Boolean) para quitar strings vacíos si hay comas seguidas.
-                 galleryJson = JSON.stringify(project.Record_Image.split(',').map(item => item.trim()).filter(Boolean));
+                galleryJson = JSON.stringify(
+                    project.Record_Image.split(',')
+                        .map(item => item.trim())
+                        .filter(Boolean)
+                );
             }
-            // Atributos a JSON: Correcto, maneja `null` si no hay atributos.
-            const attributesJson = attributes ? JSON.stringify(attributes) : null;
+            
+            // CORRECCIÓN: Procesamiento de atributos
+            let attributesJson = null;
+            if (attributes && attributes.length > 0) {
+                const attributeIds = attributes.map(attr => {
+                    // Acceso seguro a Atributo.id
+                    if (attr.Atributo && attr.Atributo.id) {
+                        return attr.Atributo.id;
+                    }
+                    logger.warn(`⚠️ Atributo sin ID válido en registro: ${attr.id || 'sin ID'}`);
+                    return null;
+                }).filter(id => id !== null);  // Filtrar nulos
+                
+                attributesJson = attributeIds.length > 0 
+                    ? JSON.stringify(attributeIds) 
+                    : null;
+            }
 
-            // Array de Valores: Debe coincidir exactamente con los placeholders ($1-$10) y columnas.
             const values = [
-                project.id,                       // $1: id
-                project.Name || '',               // $2: name
-                project.Direccion_MP || '',       // $3: address
-                project.Slogan_comercial || '',   // $4: slogan
-                project.Descripcion || '',        // $5: description
-                attributesJson,                   // $6: attributes (JSON o NULL)
-                galleryJson,                      // $7: gallery (JSON array)
-                latitude,                         // $8: latitude (number)
-                longitude,                        // $9: longitude (number)
-                false                             // $10: is_public (boolean) <-- Depende de que `Es_Publico` venga de Zoho. ¡Ya lo corregimos en getZohoProjectData!
+                project.id,
+                project.Name || '',
+                project.Direccion_MP || '',
+                project.Slogan_comercial || '',
+                project.Descripcion || '',
+                attributesJson,  // JSON array de IDs o null
+                galleryJson,
+                latitude,
+                longitude,
+                false
             ];
 
-            // Ejecución de Query: Correcto.
             await client.query(insertQuery, values);
             logger.info(`✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`);
 
         } catch (error) {
-            // Manejo de error: Loguea el error específico del proyecto y relanza. Correcto.
             logger.error(`❌ Error procesando Mega Proyecto ID ${project?.id} (${project?.Name}):`, error.message);
             throw error;
         } finally {
-            // Liberar cliente: ¡Fundamental! Correcto.
             client.release();
         }
     }

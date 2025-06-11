@@ -83,8 +83,6 @@ class ZohoToPostgresSyncProjects {
     }
 
     async getProjectAttributes(accessToken, parentId) {
-        // *** LLAMADA AXIOS COMPLETA PARA OBTENER ATRIBUTOS ***
-        // Asume que el módulo de atributos se llama 'Atributos' y el campo de relación es 'Parent_Id'
         try {
             const response = await axios.get(
                 `${this.zohoConfig.baseURL}/Atributos/search?criteria=(Parent_Id.id:equals:${parentId})`,
@@ -95,23 +93,31 @@ class ZohoToPostgresSyncProjects {
             );
 
             if (response.status === 204) {
-                logger.debug(`ℹ️ Sin atributos (Zoho 204) para proyecto ID ${parentId} (módulo Atributos)`);
-                return null; // Si no hay atributos, devolvemos null como antes.
+                logger.debug(`ℹ️ Sin atributos (Zoho 204) para proyecto ID ${parentId}`);
+                return null;
             }
+            
             const attributesData = response.data?.data;
             if (!attributesData || attributesData.length === 0) {
-                 logger.debug(`ℹ️ Atributos vacíos (Zoho 200 OK, pero sin data) para proyecto ID ${parentId} (módulo Atributos)`);
-                 return null; // Si la data está vacía, devolvemos null.
+                logger.debug(`ℹ️ Atributos vacíos para proyecto ID ${parentId}`);
+                return null;
             }
-            logger.debug(`✅ Atributos recuperados (${attributesData.length}) para proyecto ID ${parentId} (módulo Atributos)`);
             
-            // MODIFICACIÓN: Extraer solo los IDs de los atributos
-            const attributeIds = attributesData.map(attribute => attribute.id);
-            
-            return attributeIds; // Devolver el array de IDs
+            // Extraer específicamente Atributo.id
+            const attributeIds = attributesData.map(attribute => {
+                // Verificar si existe el objeto Atributo y su id
+                if (attribute.Atributo && attribute.Atributo.id) {
+                    return attribute.Atributo.id;
+                }
+                logger.warn(`⚠️ Atributo sin ID en registro: ${attribute.id}`);
+                return null;
+            }).filter(id => id !== null); // Filtrar nulos
+
+            logger.debug(`✅ IDs de atributos recuperados: ${attributeIds.length}`);
+            return attributeIds;
 
         } catch (error) {
-            logger.error(`❌ Error crítico al obtener atributos (módulo Atributos) para proyecto ID ${parentId}:`, error.response?.data || error.message);
+            logger.error(`❌ Error al obtener atributos:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -126,7 +132,6 @@ class ZohoToPostgresSyncProjects {
         const hcValue = project.id;
 
         try {
-            // Obtendrá un array de IDs o null
             const attributeIdsArray = await this.getProjectAttributes(accessToken, project.id);
 
             const insertQuery = `
@@ -150,6 +155,7 @@ class ZohoToPostgresSyncProjects {
                     longitude = EXCLUDED.longitude, is_public = EXCLUDED.is_public, "attributes" = EXCLUDED.attributes;
             `;
 
+            // Preparación de datos
             const megaProjectId = project['Mega_Proyecto.id'] || null;
             const latitude = parseFloat(project.Latitud) || 0;
             const longitude = parseFloat(project.Longitud) || 0;
@@ -162,9 +168,39 @@ class ZohoToPostgresSyncProjects {
                             ? Math.max(0, ...project['Ba_os'].map(n => parseInt(n, 10)).filter(Number.isFinite))
                             : parseInt(project['Ba_os'], 10) || 0;
             
-            // Si attributeIdsArray es null, attributesJson será null.
-            // Si es un array (incluso vacío []), se convertirá a su representación JSON ("[]" o "[\"id1\", \"id2\"]")
             const attributesJson = attributeIdsArray ? JSON.stringify(attributeIdsArray) : null;
+
+            // ***************************************************************
+            // *****     AQUÍ ESTÁ EL AJUSTE SIMPLIFICADO PARA 'status' [10/06/25]    *****
+            // ***************************************************************
+            const statusMap = {
+                'sobre planos': '1000000000000000001',
+                'en construccion': '1000000000000000002',
+                // Agregamos "Entrega inmediata" y "Lanzamiento"
+                'lanzamiento ': '1000000000000000003', // Asignando ID 3
+                'entrega inmediata': '1000000000000000004'      // Asignando ID 4
+            };
+
+            let statusForDb = null;
+            const statusFromZoho = project.Estado;
+
+            if (statusFromZoho && typeof statusFromZoho === 'string') {
+                // Normalizar el texto: minúsculas y sin acentos/caracteres especiales.
+                const normalizedStatus = statusFromZoho
+                    .toLowerCase()
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "");
+
+                // Buscar en el mapa
+                const statusId = statusMap[normalizedStatus];
+
+                if (statusId) {
+                    // Si encontramos un ID, lo formateamos para la DB
+                    statusForDb = JSON.stringify([statusId]);
+                }
+                // Si no se encuentra, statusForDb permanecerá como null
+            }
+            // ***************************************************************
 
             const values = [
                 hcValue, project.Name || '', project.Slogan || '', project.Direccion || '',
@@ -172,10 +208,11 @@ class ZohoToPostgresSyncProjects {
                 project['Sala_de_ventas.Name'] || '', parseInt(project.Cantidad_SMMLV, 10) || 0,
                 project.Descripcion_descuento || '', parseFloat(project.Precios_desde) || 0,
                 parseFloat(project.Precios_hasta) || 0, project.Tipo_de_proyecto || '',
-                megaProjectId, project.Estado ? JSON.stringify(project.Estado) : null,
+                megaProjectId,
+                statusForDb, // <-- Usamos la variable preparada
                 project.Proyecto_destacado || false, builtArea, privateArea,
                 roomsValue, bathroomsValue, latitude, longitude,
-                false, attributesJson // Aquí se guarda el JSON del array de IDs o null
+                false, attributesJson
             ];
 
             await client.query(insertQuery, values);

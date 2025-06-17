@@ -22,6 +22,7 @@ class ZohoToPostgresSyncProjects {
         };
     }
 
+    // (getZohoAccessToken - sin cambios, está bien)
     async getZohoAccessToken() {
         try {
             const response = await axios.post(
@@ -46,6 +47,7 @@ class ZohoToPostgresSyncProjects {
         }
     }
 
+    // (getZohoProjects - sin cambios, está bien)
     async getZohoProjects(accessToken, offset = 0) {
         const coqlQueryObject = {
             select_query: `
@@ -54,7 +56,7 @@ class ZohoToPostgresSyncProjects {
                     SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento,
                     Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id,
                     Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta,
-                    Habitaciones, Ba_os, Latitud, Longitud
+                    Habitaciones, Ba_os, Latitud, Longitud, Ciudad.id
                 FROM Proyectos_Comerciales
                 WHERE id is not null                
                 LIMIT ${offset}, 200
@@ -82,6 +84,7 @@ class ZohoToPostgresSyncProjects {
         }
     }
 
+    // (getProjectAttributes - sin cambios, está bien)
     async getProjectAttributes(accessToken, parentId) {
         try {
             const response = await axios.get(
@@ -103,15 +106,13 @@ class ZohoToPostgresSyncProjects {
                 return null;
             }
             
-            // Extraer específicamente Atributo.id
             const attributeIds = attributesData.map(attribute => {
-                // Verificar si existe el objeto Atributo y su id
                 if (attribute.Atributo && attribute.Atributo.id) {
                     return attribute.Atributo.id;
                 }
                 logger.warn(`⚠️ Atributo sin ID en registro: ${attribute.id}`);
                 return null;
-            }).filter(id => id !== null); // Filtrar nulos
+            }).filter(id => id !== null);
 
             logger.debug(`✅ IDs de atributos recuperados: ${attributeIds.length}`);
             return attributeIds;
@@ -123,6 +124,7 @@ class ZohoToPostgresSyncProjects {
     }
 
     async insertProjectIntoPostgres(project, accessToken) {
+        // (el resto de la función es igual hasta la preparación de datos)
         if (!project || !project.id) {
             logger.warn('⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo.');
             return { success: false, hc: null, errorType: 'invalid_data' };
@@ -139,9 +141,9 @@ class ZohoToPostgresSyncProjects {
                     hc, name, slogan, address, small_description, long_description, sic,
                     sales_room_name, salary_minimum_count, discount_description, price_from_general,
                     price_up_general, "type", mega_project_id, status, highlighted, built_area,
-                    private_area, rooms, bathrooms, latitude, longitude, is_public, "attributes"
+                    private_area, rooms, bathrooms, latitude, longitude, is_public, "attributes", city
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
                 )
                 ON CONFLICT (hc) DO UPDATE SET
                     name = EXCLUDED.name, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
@@ -152,11 +154,18 @@ class ZohoToPostgresSyncProjects {
                     "type" = EXCLUDED.type, mega_project_id = EXCLUDED.mega_project_id, status = EXCLUDED.status,
                     highlighted = EXCLUDED.highlighted, built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area,
                     rooms = EXCLUDED.rooms, bathrooms = EXCLUDED.bathrooms, latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude, is_public = EXCLUDED.is_public, "attributes" = EXCLUDED.attributes;
+                    longitude = EXCLUDED.longitude, is_public = EXCLUDED.is_public, "attributes" = EXCLUDED.attributes,
+                    city = EXCLUDED.city;
             `;
 
-            // Preparación de datos
+            // --- Preparación de datos (CON CORRECCIONES Y MEJORAS) ---
+
+            // <<< MEJORA: Usar encadenamiento opcional `?.` para Mega_Proyecto.id también, por si viene nulo.
             const megaProjectId = project['Mega_Proyecto.id'] || null;
+            
+            // <<< CORRECCIÓN PRINCIPAL: Acceder a 'Ciudad.id' como una clave de string.
+            const cityId = project['Ciudad.id'] || null;
+
             const latitude = parseFloat(project.Latitud) || 0;
             const longitude = parseFloat(project.Longitud) || 0;
             const builtArea = parseFloat(project.Area_construida_desde) || 0;
@@ -170,37 +179,22 @@ class ZohoToPostgresSyncProjects {
             
             const attributesJson = attributeIdsArray ? JSON.stringify(attributeIdsArray) : null;
 
-            // ***************************************************************
-            // *****     AQUÍ ESTÁ EL AJUSTE SIMPLIFICADO PARA 'status' [10/06/25]    *****
-            // ***************************************************************
+            // Lógica para 'status' (sin cambios, ya estaba bien)
             const statusMap = {
                 'sobre planos': '1000000000000000001',
                 'en construccion': '1000000000000000002',
-                // Agregamos "Entrega inmediata" y "Lanzamiento"
-                'lanzamiento ': '1000000000000000003', // Asignando ID 3
-                'entrega inmediata': '1000000000000000004'      // Asignando ID 4
+                'lanzamiento ': '1000000000000000003',
+                'entrega inmediata': '1000000000000000004'
             };
-
             let statusForDb = null;
             const statusFromZoho = project.Estado;
-
             if (statusFromZoho && typeof statusFromZoho === 'string') {
-                // Normalizar el texto: minúsculas y sin acentos/caracteres especiales.
-                const normalizedStatus = statusFromZoho
-                    .toLowerCase()
-                    .normalize("NFD")
-                    .replace(/[\u0300-\u036f]/g, "");
-
-                // Buscar en el mapa
+                const normalizedStatus = statusFromZoho.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 const statusId = statusMap[normalizedStatus];
-
                 if (statusId) {
-                    // Si encontramos un ID, lo formateamos para la DB
                     statusForDb = JSON.stringify([statusId]);
                 }
-                // Si no se encuentra, statusForDb permanecerá como null
             }
-            // ***************************************************************
 
             const values = [
                 hcValue, project.Name || '', project.Slogan || '', project.Direccion || '',
@@ -209,10 +203,11 @@ class ZohoToPostgresSyncProjects {
                 project.Descripcion_descuento || '', parseFloat(project.Precios_desde) || 0,
                 parseFloat(project.Precios_hasta) || 0, project.Tipo_de_proyecto || '',
                 megaProjectId,
-                statusForDb, // <-- Usamos la variable preparada
+                statusForDb,
                 project.Proyecto_destacado || false, builtArea, privateArea,
                 roomsValue, bathroomsValue, latitude, longitude,
-                false, attributesJson
+                false, attributesJson,
+                cityId // <<< CORRECCIÓN: Usar la variable `cityId` preparada
             ];
 
             await client.query(insertQuery, values);
@@ -220,6 +215,11 @@ class ZohoToPostgresSyncProjects {
             return { success: true, hc: hcValue };
 
         } catch (error) {
+            // <<< MEJORA: Añadir una comprobación de FK para la ciudad también.
+            if (error.code === '23503' && error.constraint === 'Projects_city_fkey') {
+                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_city_fkey'. La ciudad con id '${project['Ciudad.id']}' no existe en la tabla "Cities".`);
+                return { success: false, hc: hcValue, errorType: 'foreign_key_violation', constraint: 'Projects_city_fkey', value: project['Ciudad.id'] };
+            }
             if (error.code === '23503' && error.constraint === 'Projects_mega_project_id_fkey') {
                 logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_mega_project_id_fkey'. El mega_project_id '${project['Mega_Proyecto.id']}' no existe en "Mega_Projects".`);
                 return { success: false, hc: hcValue, errorType: 'foreign_key_violation', constraint: 'Projects_mega_project_id_fkey', value: project['Mega_Proyecto.id'] };
@@ -227,14 +227,17 @@ class ZohoToPostgresSyncProjects {
                 logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de PK 'Projects_pkey'. Este HC ya existe y la lógica ON CONFLICT debería haberlo manejado. Revisar. Error: ${error.message}`);
                 return { success: false, hc: hcValue, errorType: 'primary_key_violation', constraint: 'Projects_pkey' };
             }
-            logger.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error.message);
+            // <<< MEJORA: Loguear el error original completo en el catch final para más detalles.
+            logger.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error);
             return { success: false, hc: hcValue, errorType: 'other_db_error', message: error.message };
         } finally {
             client.release();
         }
     }
-
+    
+    // (getTypologiesFromZoho - sin cambios, está bien)
     async getTypologiesFromZoho(accessToken, parentId) {
+        // ...código sin cambios...
         try {
             const response = await axios.get(
                 `${this.zohoConfig.baseURL}/Tipologias/search?criteria=(Parent_Id.id:equals:${parentId})`,
@@ -257,7 +260,9 @@ class ZohoToPostgresSyncProjects {
         }
     }
 
+    // (insertTypologies - sin cambios, está bien)
     async insertTypologies(projectHc, projectIdZoho, typologies) {
+        // ...código sin cambios...
         if (!typologies || typologies.length === 0) {
              logger.debug(`ℹ️ No hay tipologías para insertar para proyecto HC ${projectHc}`);
              return;
@@ -325,7 +330,9 @@ class ZohoToPostgresSyncProjects {
         }
     }
 
+    // (run - sin cambios, está bien)
     async run() {
+        // ...código sin cambios...
         let connectionClosed = false;
         let totalProyectosZoho = 0;
         let proyectosProcesadosConExito = 0;
@@ -441,14 +448,11 @@ class ZohoToPostgresSyncProjects {
     }
 }
 
+
 module.exports = ZohoToPostgresSyncProjects;
 
-// Bloque para ejecución directa (si es necesario)
+// (Bloque para ejecución directa sin cambios)
 if (require.main === module) {
-    // Asegúrate de que logger está definido si no lo importas arriba de la clase
-    // const logger = require('../logs/logger'); // Ya está arriba
-    // const ZohoToPostgresSyncProjects = require('./projects'); // Si el archivo se llama 'projects.js'
-
     logger.info("Ejecutando ZohoToPostgresSyncProjects directamente como script...");
     const sync = new ZohoToPostgresSyncProjects();
 
@@ -460,7 +464,7 @@ if (require.main === module) {
         .catch(error => {
             logger.error("--------------------------------------------------------------------");
             logger.error("ERROR FATAL en la ejecución directa de ZohoToPostgresSyncProjects:");
-            logger.error(error); // Imprime el error completo, incluyendo stack trace si está disponible
+            logger.error(error); 
             logger.error("--------------------------------------------------------------------");
             process.exit(1);
         });

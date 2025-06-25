@@ -18,4 +18,4 @@ COPY . .
 # EXPOSE 8080
 
 # Comando para iniciar el script de sincronización definido en package.json
-CMD ["npm", "run", "sync"]
+CMD ["npm", "start"]

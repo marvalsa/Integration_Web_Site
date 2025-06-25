@@ -1,22 +1,26 @@
+# cloudbuild.yaml CORREGIDO
 steps:
   # Paso 1: Construir la imagen
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/my-node-apps/zoho-sync-job:$SHORT_SHA'
+      # ---> AJUSTA LA REGIÓN Y EL NOMBRE DEL REPO AQUÍ <---
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/integration-web-site/zoho-sync-job:$SHORT_SHA'
       - '.'
 
   # Paso 2: Empujar la imagen
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/my-node-apps/zoho-sync-job:$SHORT_SHA'
+      # ---> Y AJÚSTALO TAMBIÉN AQUÍ <---
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/integration-web-site/zoho-sync-job:$SHORT_SHA'
 
 # Especificar la imagen final
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/my-node-apps/zoho-sync-job:$SHORT_SHA'
+  # ---> Y TAMBIÉN AQUÍ <---
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/integration-web-site/zoho-sync-job:$SHORT_SHA'
 
-# Opciones de la compilación para evitar el error
+# Opciones de la compilación
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -29,7 +29,7 @@ app.post('/', async (req, res) => {
         const syncProjects = new ZohoToPostgresSyncProjects();
 
         await Promise.all([
-            // syncCities.run(),
+            syncCities.run(),
             syncMega.run(),
             syncAttributes.run(),
             syncProjects.run()

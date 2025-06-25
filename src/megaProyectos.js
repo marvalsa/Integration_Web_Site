@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('./logs/logger');
+
 
 // Nombre de clase: ZohoToPostgresSync está bien si es un nombre genérico,
 // pero MegaProyectosSync sería más descriptivo si esta clase *solo* maneja eso.
@@ -45,11 +45,11 @@ class ZohoToPostgresSync {
             // Respuesta esperada: response.data debe contener access_token.
             const token = response.data.access_token;
             if (!token) throw new Error('Access token no recibido'); // Buena validación.
-            logger.info('✅ Token obtenido para Mega Proyectos');
+            console.log('✅ Token obtenido para Mega Proyectos');
             return token;
         } catch (error) {
             // Manejo de error: Loguea y relanza, correcto para detener el proceso si falla.
-            logger.error('❌ Error al obtener token para Mega Proyectos:', error.response?.data || error.message);
+            console.error('❌ Error al obtener token para Mega Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -97,12 +97,12 @@ class ZohoToPostgresSync {
             // Respuesta esperada: response.data.data (array de proyectos) y response.data.info (paginación).
             const info = response.data.info;
             const data = response.data.data || []; // Buen default a array vacío.
-            logger.info(`✅ Recuperados ${data.length} Mega Proyectos de Zoho (offset ${offset})`);
+            console.log(`✅ Recuperados ${data.length} Mega Proyectos de Zoho (offset ${offset})`);
             // Retorna los datos y la info de paginación. Correcto.
             return { data, more: info?.more_records === true, count: info?.count || 0 };
         } catch (error) {
             // Manejo de error: Loguea y relanza, correcto para detener el proceso si falla COQL.
-            logger.error('❌ Error al ejecutar COQL para Mega Proyectos:', error.response?.data || error.message);
+            console.error('❌ Error al ejecutar COQL para Mega Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -123,24 +123,24 @@ class ZohoToPostgresSync {
             // Manejo de Respuesta:
             // Caso 1: 204 No Content -> Devuelve null (Válido, sin atributos). Correcto.
             if (response.status === 204) {
-                logger.debug(`ℹ️ Sin atributos (Zoho 204) para Mega Proyecto ID ${parentId}`);
+                console.log(`ℹ️ Sin atributos (Zoho 204) para Mega Proyecto ID ${parentId}`);
                 return null;
             }
 
             // Caso 2: 200 OK, pero sin datos -> Devuelve null (Válido, sin atributos). Correcto.
             const attributesData = response.data?.data;
             if (!attributesData || attributesData.length === 0) {
-                 logger.debug(`ℹ️ Atributos vacíos (Zoho 200 OK, pero sin data) para Mega Proyecto ID ${parentId}`);
+                 console.log(`ℹ️ Atributos vacíos (Zoho 200 OK, pero sin data) para Mega Proyecto ID ${parentId}`);
                  return null;
             }
 
             // Caso 3: 200 OK con datos -> Devuelve los datos. Correcto.
-            logger.debug(`✅ Atributos recuperados para Mega Proyecto ID ${parentId}`);
+            console.log(`✅ Atributos recuperados para Mega Proyecto ID ${parentId}`);
             return attributesData;
 
         } catch (error) {
             // Manejo de error: Loguea y relanza. Correcto para detener si falla la *obtención*.
-            logger.error(`❌ Error CRÍTICO al intentar obtener atributos para Mega Proyecto ID ${parentId}:`, error.response?.data || error.message);
+            console.error(`❌ Error CRÍTICO al intentar obtener atributos para Mega Proyecto ID ${parentId}:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -148,7 +148,7 @@ class ZohoToPostgresSync {
     // --- Paso 4: Insertar/Actualizar Mega Proyecto en PostgreSQL ---
     async insertMegaProjectIntoPostgres(project, accessToken) {
         if (!project || !project.id) {
-            logger.warn('⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo.');
+            console.log('⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo.');
             return;
         }
 
@@ -195,7 +195,7 @@ class ZohoToPostgresSync {
                     if (attr.Atributo && attr.Atributo.id) {
                         return attr.Atributo.id;
                     }
-                    logger.warn(`⚠️ Atributo sin ID válido en registro: ${attr.id || 'sin ID'}`);
+                    console.log(`⚠️ Atributo sin ID válido en registro: ${attr.id || 'sin ID'}`);
                     return null;
                 }).filter(id => id !== null);  // Filtrar nulos
                 
@@ -218,10 +218,10 @@ class ZohoToPostgresSync {
             ];
 
             await client.query(insertQuery, values);
-            logger.info(`✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`);
+            console.log(`✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`);
 
         } catch (error) {
-            logger.error(`❌ Error procesando Mega Proyecto ID ${project?.id} (${project?.Name}):`, error.message);
+            console.error(`❌ Error procesando Mega Proyecto ID ${project?.id} (${project?.Name}):`, error.message);
             throw error;
         } finally {
             client.release();
@@ -236,10 +236,10 @@ class ZohoToPostgresSync {
         let token; // Definir fuera para que esté disponible en finally si es necesario
 
         try {
-            logger.info('🚀 Iniciando sincronización de Mega Proyectos...');
+            console.log('🚀 Iniciando sincronización de Mega Proyectos...');
             // 1. Verificar conexión a DB
             const client = await this.pool.connect(); // Intenta conectar
-            logger.info('✅ Conexión a PostgreSQL verificada para Mega Proyectos.');
+            console.log('✅ Conexión a PostgreSQL verificada para Mega Proyectos.');
             client.release(); // Libera la conexión de prueba
 
             // 2. Obtener Token (falla aquí, se detiene todo)
@@ -254,11 +254,11 @@ class ZohoToPostgresSync {
 
                 // Condición de salida del bucle (si no hay proyectos)
                 if (!projects || projects.length === 0) {
-                    logger.info(`ℹ️ No se encontraron más Mega Proyectos en Zoho (offset: ${offset}). Finalizando bucle.`);
+                    console.log(`ℹ️ No se encontraron más Mega Proyectos en Zoho (offset: ${offset}). Finalizando bucle.`);
                     break; // Salir del while
                 }
 
-                logger.info(`ℹ️ Procesando lote de ${projects.length} Mega Proyectos (offset: ${offset})...`);
+                console.log(`ℹ️ Procesando lote de ${projects.length} Mega Proyectos (offset: ${offset})...`);
 
                 // 4. Procesar cada proyecto del lote
                 for (const project of projects) {
@@ -267,11 +267,11 @@ class ZohoToPostgresSync {
                         // Intentar insertar/actualizar (puede fallar por atributos o DB)
                         await this.insertMegaProjectIntoPostgres(project, token);
                         totalInsertados++; // Contar solo si no hubo error
-                        logger.debug(`🏁 Mega Proyecto ID: ${project.id} procesado con éxito.`);
+                        console.log(`🏁 Mega Proyecto ID: ${project.id} procesado con éxito.`);
                     } catch (insertError) {
                         // Manejo de error por proyecto:
                         // Opción Actual: Detener toda la sincronización. Correcto para tu requisito.
-                        logger.error(`🚨 Falló el procesamiento del Mega Proyecto ID: ${project?.id || 'ID desconocido'}. Deteniendo sincronización general.`);
+                        console.error(`🚨 Falló el procesamiento del Mega Proyecto ID: ${project?.id || 'ID desconocido'}. Deteniendo sincronización general.`);
                         throw insertError; // Propaga para activar el catch principal y detener 'run'.
                     }
                 } // Fin for (procesamiento del lote)
@@ -279,28 +279,28 @@ class ZohoToPostgresSync {
                 // Actualizar estado de paginación y offset
                 more = hasMore;
                 if (!more) {
-                    logger.info('ℹ️ No hay más registros de Mega Proyectos indicados por Zoho.');
+                    console.log('ℹ️ No hay más registros de Mega Proyectos indicados por Zoho.');
                     // El bucle terminará en la siguiente iteración.
                 }
                 offset += 200; // Incrementar offset para la siguiente página
 
             } // Fin while (paginación)
 
-            logger.info(`✅ Sincronización de Mega Proyectos finalizada. ${totalInsertados} de ${totalProcesados} procesados exitosamente (o detenida por error si totalInsertados < totalProcesados).`);
+            console.log(`✅ Sincronización de Mega Proyectos finalizada. ${totalInsertados} de ${totalProcesados} procesados exitosamente (o detenida por error si totalInsertados < totalProcesados).`);
 
         } catch (error) {
             // Captura errores críticos (conexión, token, COQL) o errores propagados de la inserción.
-            logger.error('🚨 ERROR CRÍTICO durante la sincronización de Mega Proyectos. El proceso se detuvo.', error);
+            console.error('🚨 ERROR CRÍTICO durante la sincronización de Mega Proyectos. El proceso se detuvo.', error);
             // Relanzar para que el script que llamó a run() (el IIFE) se entere. Correcto.
             throw error;
 
         } finally {
             // Cierre del pool: Se ejecuta siempre (éxito o error). Correcto y robusto.
             if (this.pool && !connectionClosed) {
-                logger.info('🔌 Cerrando pool de conexiones PostgreSQL para Mega Proyectos...');
-                await this.pool.end().catch(err => logger.error('❌ Error al cerrar pool PG para Mega Proyectos:', err));
+                console.log('🔌 Cerrando pool de conexiones PostgreSQL para Mega Proyectos...');
+                await this.pool.end().catch(err => console.error('❌ Error al cerrar pool PG para Mega Proyectos:', err));
                 connectionClosed = true;
-                logger.info('🔌 Pool de conexiones PostgreSQL cerrado.');
+                console.log('🔌 Pool de conexiones PostgreSQL cerrado.');
             }
         }
     }
@@ -308,24 +308,3 @@ class ZohoToPostgresSync {
 
 module.exports = ZohoToPostgresSync;
 
-// Ejecución directa (para pruebas): Correcto.
-if (require.main === module) {
-    // Requerir logger aquí si solo se usa en este bloque
-    const logger = require('./logs/logger'); // Asegúrate que la ruta es correcta
-
-    logger.info("Ejecutando ZohoToPostgresSync (MegaProyectos) directamente como script...");
-    const sync = new ZohoToPostgresSync();
-
-    sync.run()
-        .then(() => {
-             logger.info("Sincronización de MegaProyectos (ejecución directa) finalizada exitosamente.");
-             // process.exit(0); // Opcional, Node sale con 0 por defecto si no hay error
-        })
-        .catch(err => {
-            logger.error("------------------------------------------------------------------");
-            logger.error("ERROR FATAL al ejecutar ZohoToPostgresSync directamente:");
-            logger.error(err); // Imprime el error completo
-            logger.error("------------------------------------------------------------------");
-            process.exit(1); // Salir con código de error
-        });
-}

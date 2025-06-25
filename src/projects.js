@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('./logs/logger');
+
 
 class ZohoToPostgresSyncProjects {
     constructor() {
@@ -39,10 +39,10 @@ class ZohoToPostgresSyncProjects {
             );
             const token = response.data.access_token;
             if (!token) throw new Error('Access token no recibido');
-            logger.info('✅ Token obtenido para sincronización de Proyectos');
+            console.log('✅ Token obtenido para sincronización de Proyectos');
             return token;
         } catch (error) {
-            logger.error('❌ Error al obtener token para Proyectos:', error.response?.data || error.message);
+            console.error('❌ Error al obtener token para Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -76,10 +76,10 @@ class ZohoToPostgresSyncProjects {
             );
             const info = response.data.info;
             const data = response.data.data || [];
-            logger.info(`✅ Recuperados ${data.length} proyectos de Zoho (offset ${offset})`);
+            console.log(`✅ Recuperados ${data.length} proyectos de Zoho (offset ${offset})`);
             return { data, more: info?.more_records === true, count: info?.count || 0 };
         } catch (error) {
-            logger.error('❌ Error al ejecutar COQL para Proyectos:', error.response?.data || error.message);
+            console.error('❌ Error al ejecutar COQL para Proyectos:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -96,13 +96,13 @@ class ZohoToPostgresSyncProjects {
             );
 
             if (response.status === 204) {
-                logger.debug(`ℹ️ Sin atributos (Zoho 204) para proyecto ID ${parentId}`);
+                console.log(`ℹ️ Sin atributos (Zoho 204) para proyecto ID ${parentId}`);
                 return null;
             }
             
             const attributesData = response.data?.data;
             if (!attributesData || attributesData.length === 0) {
-                logger.debug(`ℹ️ Atributos vacíos para proyecto ID ${parentId}`);
+                console.log(`ℹ️ Atributos vacíos para proyecto ID ${parentId}`);
                 return null;
             }
             
@@ -110,15 +110,15 @@ class ZohoToPostgresSyncProjects {
                 if (attribute.Atributo && attribute.Atributo.id) {
                     return attribute.Atributo.id;
                 }
-                logger.warn(`⚠️ Atributo sin ID en registro: ${attribute.id}`);
+                console.log(`⚠️ Atributo sin ID en registro: ${attribute.id}`);
                 return null;
             }).filter(id => id !== null);
 
-            logger.debug(`✅ IDs de atributos recuperados: ${attributeIds.length}`);
+            console.log(`✅ IDs de atributos recuperados: ${attributeIds.length}`);
             return attributeIds;
 
         } catch (error) {
-            logger.error(`❌ Error al obtener atributos:`, error.response?.data || error.message);
+            console.error(`❌ Error al obtener atributos:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -126,7 +126,7 @@ class ZohoToPostgresSyncProjects {
     async insertProjectIntoPostgres(project, accessToken) {
         // (el resto de la función es igual hasta la preparación de datos)
         if (!project || !project.id) {
-            logger.warn('⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo.');
+            console.log('⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo.');
             return { success: false, hc: null, errorType: 'invalid_data' };
         }
 
@@ -211,24 +211,24 @@ class ZohoToPostgresSyncProjects {
             ];
 
             await client.query(insertQuery, values);
-            logger.info(`✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`);
+            console.log(`✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`);
             return { success: true, hc: hcValue };
 
         } catch (error) {
             // <<< MEJORA: Añadir una comprobación de FK para la ciudad también.
             if (error.code === '23503' && error.constraint === 'Projects_city_fkey') {
-                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_city_fkey'. La ciudad con id '${project['Ciudad.id']}' no existe en la tabla "Cities".`);
+                console.log(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_city_fkey'. La ciudad con id '${project['Ciudad.id']}' no existe en la tabla "Cities".`);
                 return { success: false, hc: hcValue, errorType: 'foreign_key_violation', constraint: 'Projects_city_fkey', value: project['Ciudad.id'] };
             }
             if (error.code === '23503' && error.constraint === 'Projects_mega_project_id_fkey') {
-                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_mega_project_id_fkey'. El mega_project_id '${project['Mega_Proyecto.id']}' no existe en "Mega_Projects".`);
+                console.log(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de FK 'Projects_mega_project_id_fkey'. El mega_project_id '${project['Mega_Proyecto.id']}' no existe en "Mega_Projects".`);
                 return { success: false, hc: hcValue, errorType: 'foreign_key_violation', constraint: 'Projects_mega_project_id_fkey', value: project['Mega_Proyecto.id'] };
             } else if (error.code === '23505' && error.constraint === 'Projects_pkey') {
-                logger.warn(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de PK 'Projects_pkey'. Este HC ya existe y la lógica ON CONFLICT debería haberlo manejado. Revisar. Error: ${error.message}`);
+                console.log(`⚠️ OMITIENDO Proyecto HC ${hcValue} (${project?.Name}) debido a violación de PK 'Projects_pkey'. Este HC ya existe y la lógica ON CONFLICT debería haberlo manejado. Revisar. Error: ${error.message}`);
                 return { success: false, hc: hcValue, errorType: 'primary_key_violation', constraint: 'Projects_pkey' };
             }
             // <<< MEJORA: Loguear el error original completo en el catch final para más detalles.
-            logger.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error);
+            console.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error);
             return { success: false, hc: hcValue, errorType: 'other_db_error', message: error.message };
         } finally {
             client.release();
@@ -248,14 +248,14 @@ class ZohoToPostgresSyncProjects {
             );
 
             if (response.status === 204 || !response.data?.data || response.data.data.length === 0) {
-                logger.debug(`ℹ️ Sin tipologías (Zoho 204 o sin data) para proyecto ID ${parentId} (módulo Tipologias)`);
+                console.log(`ℹ️ Sin tipologías (Zoho 204 o sin data) para proyecto ID ${parentId} (módulo Tipologias)`);
                 return [];
             }
             const typologiesData = response.data.data;
-            logger.debug(`✅ Tipologías recuperadas (${typologiesData.length}) para proyecto ID ${parentId} (módulo Tipologias)`);
+            console.log(`✅ Tipologías recuperadas (${typologiesData.length}) para proyecto ID ${parentId} (módulo Tipologias)`);
             return typologiesData;
         } catch (error) {
-            logger.error(`❌ Error crítico al obtener tipologías (módulo Tipologias) del proyecto ID ${parentId}:`, error.response?.data || error.message);
+            console.error(`❌ Error crítico al obtener tipologías (módulo Tipologias) del proyecto ID ${parentId}:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -264,7 +264,7 @@ class ZohoToPostgresSyncProjects {
     async insertTypologies(projectHc, projectIdZoho, typologies) {
         // ...código sin cambios...
         if (!typologies || typologies.length === 0) {
-             logger.debug(`ℹ️ No hay tipologías para insertar para proyecto HC ${projectHc}`);
+             console.log(`ℹ️ No hay tipologías para insertar para proyecto HC ${projectHc}`);
              return;
         }
 
@@ -272,10 +272,10 @@ class ZohoToPostgresSyncProjects {
         let currentTypologyName = null;
 
         try {
-            logger.info(`ℹ️ Iniciando inserción/actualización de ${typologies.length} tipologías para proyecto HC ${projectHc}...`);
+            console.log(`ℹ️ Iniciando inserción/actualización de ${typologies.length} tipologías para proyecto HC ${projectHc}...`);
             for (const t of typologies) {
                 if (!t.id) {
-                    logger.warn(`⚠️ Tipología sin ID encontrada para proyecto HC ${projectHc}. Omitiendo.`);
+                    console.log(`⚠️ Tipología sin ID encontrada para proyecto HC ${projectHc}. Omitiendo.`);
                     continue;
                 }
                 currentTypologyName = t.Nombre || t.id;
@@ -318,12 +318,12 @@ class ZohoToPostgresSyncProjects {
                 ];
 
                 await client.query(insertQuery, values);
-                logger.debug(`✅ Tipología ${t.id} (${t.Nombre}) insertada/actualizada para proyecto HC ${projectHc}`);
+                console.log(`✅ Tipología ${t.id} (${t.Nombre}) insertada/actualizada para proyecto HC ${projectHc}`);
             }
-            logger.info(`✅ ${typologies.length} tipologías procesadas para proyecto HC ${projectHc}`);
+            console.log(`✅ ${typologies.length} tipologías procesadas para proyecto HC ${projectHc}`);
 
         } catch (error) {
-            logger.error(`❌ Error crítico al insertar/actualizar tipología '${currentTypologyName}' para proyecto HC ${projectHc}:`, error.message);
+            console.error(`❌ Error crítico al insertar/actualizar tipología '${currentTypologyName}' para proyecto HC ${projectHc}:`, error.message);
             throw error;
         } finally {
             client.release();
@@ -340,9 +340,9 @@ class ZohoToPostgresSyncProjects {
         let token;
 
         try {
-            logger.info('🚀 Iniciando sincronización de Proyectos Comerciales y Tipologías...');
+            console.log('🚀 Iniciando sincronización de Proyectos Comerciales y Tipologías...');
             const client = await this.pool.connect();
-            logger.info('✅ Conexión a PostgreSQL verificada para Proyectos.');
+            console.log('✅ Conexión a PostgreSQL verificada para Proyectos.');
             client.release();
             token = await this.getZohoAccessToken();
 
@@ -352,21 +352,21 @@ class ZohoToPostgresSyncProjects {
             while (more) {
                 const { data: projectsFromZoho, more: hasMore, count } = await this.getZohoProjects(token, offset);
                 if (offset === 0 && count) {
-                    logger.info(`ℹ️ Zoho reporta un total aproximado de ${count} proyectos.`);
+                    console.log(`ℹ️ Zoho reporta un total aproximado de ${count} proyectos.`);
                 }
 
                 if (!projectsFromZoho || projectsFromZoho.length === 0) {
-                    logger.info(`ℹ️ No se encontraron más Proyectos en Zoho (offset: ${offset}). Finalizando bucle de obtención.`);
+                    console.log(`ℹ️ No se encontraron más Proyectos en Zoho (offset: ${offset}). Finalizando bucle de obtención.`);
                     break;
                 }
                 
                 totalProyectosZoho += projectsFromZoho.length;
-                logger.info(`ℹ️ Procesando lote de ${projectsFromZoho.length} Proyectos de Zoho (offset: ${offset})...`);
+                console.log(`ℹ️ Procesando lote de ${projectsFromZoho.length} Proyectos de Zoho (offset: ${offset})...`);
 
                 for (const project of projectsFromZoho) {
                     try {
                         if (!project || !project.id) {
-                            logger.warn(`⚠️ Proyecto inválido o sin ID en lote de Zoho (offset: ${offset}). Omitiendo.`);
+                            console.log(`⚠️ Proyecto inválido o sin ID en lote de Zoho (offset: ${offset}). Omitiendo.`);
                             proyectosFallidosDetalles.push({
                                 hc: project?.id || 'ID Desconocido',
                                 name: project?.Name || 'Nombre Desconocido',
@@ -376,7 +376,7 @@ class ZohoToPostgresSyncProjects {
                             continue;
                         }
 
-                        logger.debug(`⏳ Procesando Proyecto HC: ${project.id} (${project.Name})...`);
+                        console.log(`⏳ Procesando Proyecto HC: ${project.id} (${project.Name})...`);
                         
                         const insertResult = await this.insertProjectIntoPostgres(project, token);
 
@@ -385,10 +385,10 @@ class ZohoToPostgresSyncProjects {
                             if (typologies && typologies.length > 0) {
                                 await this.insertTypologies(project.id, project.id, typologies);
                             }
-                            logger.debug(`🏁 Proyecto HC: ${project.id} (${project.Name}) y sus tipologías procesados con éxito.`);
+                            console.log(`🏁 Proyecto HC: ${project.id} (${project.Name}) y sus tipologías procesados con éxito.`);
                             proyectosProcesadosConExito++;
                         } else {
-                            logger.warn(`🚨 Proyecto HC: ${project.id} (${project.Name}) NO fue procesado en DB. Razón: ${insertResult.errorType}. Ver logs anteriores.`);
+                            console.log(`🚨 Proyecto HC: ${project.id} (${project.Name}) NO fue procesado en DB. Razón: ${insertResult.errorType}. Ver logs anteriores.`);
                             proyectosFallidosDetalles.push({
                                 hc: project.id,
                                 name: project.Name,
@@ -398,7 +398,7 @@ class ZohoToPostgresSyncProjects {
                         }
 
                     } catch (errorInternoAlProcesarProyecto) {
-                        logger.error(`🚨 Error INESPERADO procesando el ciclo del Proyecto HC: ${project?.id || 'ID desconocido'}. Este proyecto se marcará como fallido. Error: ${errorInternoAlProcesarProyecto.message}`);
+                        console.error(`🚨 Error INESPERADO procesando el ciclo del Proyecto HC: ${project?.id || 'ID desconocido'}. Este proyecto se marcará como fallido. Error: ${errorInternoAlProcesarProyecto.message}`);
                         proyectosFallidosDetalles.push({
                             hc: project?.id || 'ID Desconocido',
                             name: project?.Name || 'Nombre Desconocido',
@@ -410,39 +410,39 @@ class ZohoToPostgresSyncProjects {
 
                 more = hasMore;
                 if (!more) {
-                    logger.info('ℹ️ No hay más registros de Proyectos indicados por Zoho.');
+                    console.log('ℹ️ No hay más registros de Proyectos indicados por Zoho.');
                 }
                 offset += 200;
             }
 
-            logger.info('✅ Sincronización de Proyectos y Tipologías finalizada.');
-            logger.info('------------------- RESUMEN DE SINCRONIZACIÓN -------------------');
-            logger.info(`📊 Total de proyectos recuperados de Zoho: ${totalProyectosZoho}`);
-            logger.info(`✅ Proyectos procesados con éxito (insertados/actualizados en DB): ${proyectosProcesadosConExito}`);
-            logger.info(`❌ Proyectos con errores (omitidos o con fallos): ${proyectosFallidosDetalles.length}`);
+            console.log('✅ Sincronización de Proyectos y Tipologías finalizada.');
+            console.log('------------------- RESUMEN DE SINCRONIZACIÓN -------------------');
+            console.log(`📊 Total de proyectos recuperados de Zoho: ${totalProyectosZoho}`);
+            console.log(`✅ Proyectos procesados con éxito (insertados/actualizados en DB): ${proyectosProcesadosConExito}`);
+            console.log(`❌ Proyectos con errores (omitidos o con fallos): ${proyectosFallidosDetalles.length}`);
 
             if (proyectosFallidosDetalles.length > 0) {
-                logger.warn("⚠️ Detalles de los proyectos con errores:");
+                console.log("⚠️ Detalles de los proyectos con errores:");
                 proyectosFallidosDetalles.forEach(fallo => {
-                    logger.warn(`  - HC: ${fallo.hc}, Nombre: ${fallo.name}, Razón: ${fallo.reason}${fallo.details ? `, Detalles: ${fallo.details}` : ''}`);
+                    console.log(`  - HC: ${fallo.hc}, Nombre: ${fallo.name}, Razón: ${fallo.reason}${fallo.details ? `, Detalles: ${fallo.details}` : ''}`);
                 });
-                logger.warn("--------------------------------------------------------------------");
+                console.log("--------------------------------------------------------------------");
             } else if (totalProyectosZoho > 0) {
-                logger.info("🎉 Todos los proyectos de Zoho se procesaron exitosamente.");
+                console.log("🎉 Todos los proyectos de Zoho se procesaron exitosamente.");
             } else {
-                logger.info("ℹ️ No se encontraron proyectos en Zoho para procesar.");
+                console.log("ℹ️ No se encontraron proyectos en Zoho para procesar.");
             }
-            logger.info('--------------------------------------------------------------------');
+            console.log('--------------------------------------------------------------------');
 
         } catch (errorGeneral) {
-            logger.error('🚨 ERROR CRÍTICO GENERAL durante la sincronización de Proyectos/Tipologías. El proceso se detuvo.', errorGeneral);
+            console.error('🚨 ERROR CRÍTICO GENERAL durante la sincronización de Proyectos/Tipologías. El proceso se detuvo.', errorGeneral);
             throw errorGeneral;
         } finally {
             if (this.pool && !connectionClosed) {
-                logger.info('🔌 Cerrando pool de conexiones PostgreSQL para Proyectos...');
-                await this.pool.end().catch(err => logger.error('❌ Error al cerrar pool PG para Proyectos:', err));
+                console.log('🔌 Cerrando pool de conexiones PostgreSQL para Proyectos...');
+                await this.pool.end().catch(err => console.error('❌ Error al cerrar pool PG para Proyectos:', err));
                 connectionClosed = true;
-                logger.info('🔌 Pool de conexiones PostgreSQL cerrado.');
+                console.log('🔌 Pool de conexiones PostgreSQL cerrado.');
             }
         }
     }
@@ -451,21 +451,3 @@ class ZohoToPostgresSyncProjects {
 
 module.exports = ZohoToPostgresSyncProjects;
 
-// (Bloque para ejecución directa sin cambios)
-if (require.main === module) {
-    logger.info("Ejecutando ZohoToPostgresSyncProjects directamente como script...");
-    const sync = new ZohoToPostgresSyncProjects();
-
-    sync.run()
-        .then(() => {
-            logger.info("Sincronización de Proyectos y Tipologías (ejecución directa) finalizada exitosamente.");
-            process.exit(0);
-        })
-        .catch(error => {
-            logger.error("--------------------------------------------------------------------");
-            logger.error("ERROR FATAL en la ejecución directa de ZohoToPostgresSyncProjects:");
-            logger.error(error); 
-            logger.error("--------------------------------------------------------------------");
-            process.exit(1);
-        });
-}

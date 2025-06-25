@@ -1,7 +1,6 @@
 const express = require('express')
 const fs = require('fs');
 const path = require('path');
-const logger = require('./logs/logger');
 // Imports de los módulos de sincronización
 const MegaSync = require('./megaProyectos');
 const AttributeSync = require('./projectAttributes');
@@ -17,9 +16,9 @@ app.get('/', (req, res) => {
 });
 
 app.post('/', async (req, res) => {
-  logger.info("==================================================================");
-    logger.info("🚀 INICIANDO PROCESO DE SINCRONIZACIÓN COMPLETO");
-    logger.info("==================================================================");
+  console.log("==================================================================");
+    console.log("🚀 INICIANDO PROCESO DE SINCRONIZACIÓN COMPLETO");
+    console.log("==================================================================");
 
     try {
       // Instancias de sincronización
@@ -37,51 +36,51 @@ app.post('/', async (req, res) => {
 
         // // --- Paso 1: Ciudades ---
         // // Se ejecuta primero para que las FK de Proyectos funcionen
-        // logger.info("\n--- PASO 1: CIUDADES ---");
+        // console.log("\n--- PASO 1: CIUDADES ---");
         
         // await syncCities.run();
-        // logger.info("✅ Sincronización de Ciudades completada.");
+        // console.log("✅ Sincronización de Ciudades completada.");
 
         // // --- Paso 2: MegaProyectos ---
         // // Se ejecuta para que las FK de Proyectos funcionen
-        // logger.info("\n--- PASO 2: MEGAPROYECTOS ---");
+        // console.log("\n--- PASO 2: MEGAPROYECTOS ---");
         
         // await syncMega.run();
-        // logger.info("✅ Sincronización de MegaProyectos completada.");
+        // console.log("✅ Sincronización de MegaProyectos completada.");
 
         // // --- Paso 3: Atributos ---
-        // logger.info("\n--- PASO 3: ATRIBUTOS ---");
+        // console.log("\n--- PASO 3: ATRIBUTOS ---");
         
         // await syncAttributes.run();
-        // logger.info("✅ Sincronización de Atributos completada.");
+        // console.log("✅ Sincronización de Atributos completada.");
 
         // // --- Paso 4: Proyectos (y sus Tipologías) ---
         // // Se ejecuta al final ya que depende de los anteriores
-        // logger.info("\n--- PASO 4: PROYECTOS Y TIPOLOGÍAS ---");
+        // console.log("\n--- PASO 4: PROYECTOS Y TIPOLOGÍAS ---");
         
         // await syncProjects.run();
-        // logger.info("✅ Sincronización de Proyectos completada.");
+        // console.log("✅ Sincronización de Proyectos completada.");
 
-        // logger.info("\n==================================================================");
-        // logger.info("🎉 ¡TODAS LAS SINCRONIZACIONES SE HAN EJECUTADO!");
-        // logger.info("==================================================================");
+        // console.log("\n==================================================================");
+        // console.log("🎉 ¡TODAS LAS SINCRONIZACIONES SE HAN EJECUTADO!");
+        // console.log("==================================================================");
 
         res.send('Proceso de sincronización completado.');
     } catch (error) {
-        logger.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        logger.error("🚨 ERROR CRÍTICO: El proceso de sincronización se detuvo.");
-        logger.error(`   Mensaje: ${error.message}`);
+        console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        console.error("🚨 ERROR CRÍTICO: El proceso de sincronización se detuvo.");
+        console.error(`   Mensaje: ${error.message}`);
         
         if (error.stack) {
-             logger.error(`   Stack Trace: ${error.stack}`);
+             console.error(`   Stack Trace: ${error.stack}`);
         }
         if (error.response?.data) {
-            logger.error(`   Respuesta del API (Zoho): ${JSON.stringify(error.response.data)}`);
+            console.error(`   Respuesta del API (Zoho): ${JSON.stringify(error.response.data)}`);
         }
         res.status(500).send('Error en el proceso de sincronización.');
     } finally {
         // El bloque `finally` se ejecuta siempre, haya habido éxito o error.
-        logger.info("🏁 Proceso de sincronización finalizado.");
+        console.log("🏁 Proceso de sincronización finalizado.");
         // <<< SE ELIMINÓ TODA LA LÓGICA DE LECTURA Y ANÁLISIS DEL ARCHIVO DE LOG.
     }
 })

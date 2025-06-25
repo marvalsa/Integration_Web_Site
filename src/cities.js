@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('./logs/logger'); // Asegúrate que la ruta a tu logger sea correcta
+
 
 class CitiesSync {
     constructor() {
@@ -39,10 +39,10 @@ class CitiesSync {
             );
             const token = response.data.access_token;
             if (!token) throw new Error('Access token no recibido de Zoho');
-            logger.info('✅ Token obtenido para sincronización de Ciudades');
+            console.log('✅ Token obtenido para sincronización de Ciudades');
             return token;
         } catch (error) {
-            logger.error('❌ Error al obtener token para Ciudades:', error.response?.data || error.message);
+            console.error('❌ Error al obtener token para Ciudades:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -58,15 +58,15 @@ class CitiesSync {
             select_query: "SELECT Ciudad.Name, Ciudad.id FROM Proyectos_Comerciales WHERE Ciudad is not null limit 0, 200"
         };
         try {
-            logger.info("ℹ️ Obteniendo ciudades desde Zoho...");
+            console.log("ℹ️ Obteniendo ciudades desde Zoho...");
             const response = await axios.post(`${this.zohoConfig.baseURL}/coql`, query, {
                 headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
             });
             const data = response.data.data || [];
-            logger.info(`✅ ${data.length} registros de ciudad recuperados de Zoho.`);
+            console.log(`✅ ${data.length} registros de ciudad recuperados de Zoho.`);
             return data;
         } catch (error) {
-            logger.error('❌ Error al obtener ciudades desde Zoho:', error.response?.data || error.message);
+            console.error('❌ Error al obtener ciudades desde Zoho:', error.response?.data || error.message);
             throw error;
         }
     }
@@ -79,7 +79,7 @@ class CitiesSync {
      */
     async insertCitiesIntoPostgres(cities) {
         if (!cities || cities.length === 0) {
-            logger.info("ℹ️ No hay ciudades para insertar en PostgreSQL.");
+            console.log("ℹ️ No hay ciudades para insertar en PostgreSQL.");
             return { processedCount: 0, errorCount: 0 };
         }
 
@@ -94,7 +94,7 @@ class CitiesSync {
             }
         }
         const uniqueCities = Array.from(citiesMap.values());
-        logger.info(`ℹ️ Se encontraron ${uniqueCities.length} ciudades únicas de un total de ${cities.length} registros.`);
+        console.log(`ℹ️ Se encontraron ${uniqueCities.length} ciudades únicas de un total de ${cities.length} registros.`);
         // ----------------------------------------------------
 
         const client = await this.pool.connect();
@@ -103,14 +103,14 @@ class CitiesSync {
         let currentCityId = null;
 
         try {
-            logger.info(`ℹ️ Iniciando procesamiento de ${uniqueCities.length} ciudades en PostgreSQL...`);
+            console.log(`ℹ️ Iniciando procesamiento de ${uniqueCities.length} ciudades en PostgreSQL...`);
             for (const city of uniqueCities) {
                 // Las llaves tienen un punto, por lo que accedemos con ['...']
                 const cityId = city['Ciudad.id'];
                 const cityName = city['Ciudad.Name'];
 
                 if (!cityId || !cityName) {
-                    logger.warn(`⚠️ Registro de ciudad inválido (falta id o nombre): ${JSON.stringify(city)}. Omitiendo.`);
+                    console.log(`⚠️ Registro de ciudad inválido (falta id o nombre): ${JSON.stringify(city)}. Omitiendo.`);
                     errorCount++;
                     continue;
                 }
@@ -129,21 +129,21 @@ class CitiesSync {
                 const res = await client.query(upsertQuery, [cityId, cityName, true]);
 
                 if (res.rowCount > 0) {
-                    logger.debug(`✅ Ciudad ID ${cityId} ('${cityName}') procesada (insertada/actualizada).`);
+                    console.log(`✅ Ciudad ID ${cityId} ('${cityName}') procesada (insertada/actualizada).`);
                     processedCount++;
                 } else {
-                    logger.warn(`⚠️ Ciudad ID ${cityId} ('${cityName}') no afectó filas. Comando: ${res.command}.`);
+                    console.log(`⚠️ Ciudad ID ${cityId} ('${cityName}') no afectó filas. Comando: ${res.command}.`);
                 }
             }
-            logger.info(`✅ Procesamiento de ciudades completado. ${processedCount} ciudades procesadas, ${errorCount} registros inválidos omitidos.`);
+            console.log(`✅ Procesamiento de ciudades completado. ${processedCount} ciudades procesadas, ${errorCount} registros inválidos omitidos.`);
             return { processedCount, errorCount };
 
         } catch (error) {
             // Manejo de errores, incluyendo violación de la constraint UNIQUE en "name"
             if (error.code === '23505' && error.constraint === 'Cities_name_key') {
-                 logger.error(`❌ Error de unicidad al procesar en PostgreSQL. Es posible que un ID de ciudad diferente intente usar un nombre que ya existe: ${error.detail}`);
+                 console.error(`❌ Error de unicidad al procesar en PostgreSQL. Es posible que un ID de ciudad diferente intente usar un nombre que ya existe: ${error.detail}`);
             } else {
-                logger.error(`❌ Error al procesar ciudad en PostgreSQL (último intento ID: ${currentCityId}):`, error.message);
+                console.error(`❌ Error al procesar ciudad en PostgreSQL (último intento ID: ${currentCityId}):`, error.message);
             }
             throw error; // Propagar el error para detener el flujo general
         } finally {
@@ -155,27 +155,27 @@ class CitiesSync {
     async run() {
         let connectionClosed = false;
         try {
-            logger.info('🚀 Iniciando sincronización de Ciudades...');
+            console.log('🚀 Iniciando sincronización de Ciudades...');
             const client = await this.pool.connect();
-            logger.info('✅ Conexión a PostgreSQL verificada para Ciudades.');
+            console.log('✅ Conexión a PostgreSQL verificada para Ciudades.');
             client.release();
 
             const token = await this.getZohoAccessToken();
             const citiesFromZoho = await this.getZohoCities(token);
             const result = await this.insertCitiesIntoPostgres(citiesFromZoho);
 
-            logger.info(`✅ Sincronización de Ciudades finalizada. ${result.processedCount} ciudades procesadas.`);
+            console.log(`✅ Sincronización de Ciudades finalizada. ${result.processedCount} ciudades procesadas.`);
 
         } catch (error) {
-            logger.error('🚨 ERROR CRÍTICO durante la sincronización de Ciudades. El proceso se detendrá.', error);
+            console.error('🚨 ERROR CRÍTICO durante la sincronización de Ciudades. El proceso se detendrá.', error);
             throw error;
 
         } finally {
             if (this.pool && !connectionClosed) {
-                logger.info('🔌 Cerrando pool de conexiones PostgreSQL para Ciudades...');
-                await this.pool.end().catch(err => logger.error('❌ Error al cerrar pool PG para Ciudades:', err));
+                console.log('🔌 Cerrando pool de conexiones PostgreSQL para Ciudades...');
+                await this.pool.end().catch(err => console.error('❌ Error al cerrar pool PG para Ciudades:', err));
                 connectionClosed = true;
-                logger.info('🔌 Pool de conexiones PostgreSQL cerrado.');
+                console.log('🔌 Pool de conexiones PostgreSQL cerrado.');
             }
         }
     }
@@ -184,21 +184,3 @@ class CitiesSync {
 // Exportar la clase para poder usarla en otros archivos
 module.exports = CitiesSync;
 
-// --- BLOQUE PARA EJECUCIÓN DIRECTA (COMO SCRIPT) ---
-// Este bloque solo se ejecuta si corres este archivo directamente con `node citiesSync.js`
-if (require.main === module) {
-    const sync = new CitiesSync();
-
-    sync.run()
-        .then(() => {
-            logger.info("Sincronización de Ciudades (ejecución directa) finalizada exitosamente.");
-            process.exit(0);
-        })
-        .catch(error => {
-            logger.error("------------------------------------------------------");
-            logger.error("ERROR FATAL en la ejecución directa de CitiesSync:");
-            logger.error(error.message); // Imprime un mensaje más limpio del error
-            logger.error("------------------------------------------------------");
-            process.exit(1); // Salir con código de error
-        });
-}

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('../logs/logger'); // Asegúrate que la ruta a tu logger sea correcta
+const logger = require('./logs/logger'); // Asegúrate que la ruta a tu logger sea correcta
 
 class CitiesSync {
     constructor() {

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('../logs/logger');
+const logger = require('./logs/logger');
 
 // Nombre de clase: ZohoToPostgresSync está bien si es un nombre genérico,
 // pero MegaProyectosSync sería más descriptivo si esta clase *solo* maneja eso.
@@ -311,7 +311,7 @@ module.exports = ZohoToPostgresSync;
 // Ejecución directa (para pruebas): Correcto.
 if (require.main === module) {
     // Requerir logger aquí si solo se usa en este bloque
-    const logger = require('../logs/logger'); // Asegúrate que la ruta es correcta
+    const logger = require('./logs/logger'); // Asegúrate que la ruta es correcta
 
     logger.info("Ejecutando ZohoToPostgresSync (MegaProyectos) directamente como script...");
     const sync = new ZohoToPostgresSync();

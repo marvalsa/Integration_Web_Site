@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const logger = require('./logs/logger');
+const logger = require('./src/logs/logger');
 
 // Imports de los módulos de sincronización
 const MegaSync = require('./src/megaProyectos');

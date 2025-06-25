@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('../logs/logger');
+const logger = require('./logs/logger');
 
 class ProjectAttributesSync {
     constructor() {
@@ -169,7 +169,7 @@ module.exports = ProjectAttributesSync;
 // Ejecutar directamente si se llama como script
 if (require.main === module) {
     // Asegúrate de que la ruta a 'logger' sea correcta desde este archivo
-    const logger = require('../logs/logger');
+    const logger = require('./logs/logger');
     // Asegúrate de que la ruta a 'projectAttributes' sea correcta
     const ProjectAttributesSync = require('./projectAttributes');
 

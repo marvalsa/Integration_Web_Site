@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
-const logger = require('../logs/logger');
+const logger = require('./logs/logger');
 
 class ZohoToPostgresSyncProjects {
     constructor() {

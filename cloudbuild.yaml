@@ -1,0 +1,31 @@
+steps:
+# --- PASO 1: CONSTRUIR LA IMAGEN DE DOCKER ---
+# Le decimos a Cloud Build que use la herramienta 'docker' de su catálogo de constructores.
+- name: 'gcr.io/cloud-builders/docker'
+  # Los 'args' son los argumentos que se le pasan al comando docker.
+  # Esto es el equivalente a: docker build -t [nombre completo de la imagen] .
+  args:
+    - 'build'
+    - '-t'
+    - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA'
+    - '.'
+
+# --- PASO 2: EMPUJAR (PUSH) LA IMAGEN A ARTIFACT REGISTRY ---
+# Usamos de nuevo la herramienta 'docker'.
+- name: 'gcr.io/cloud-builders/docker'
+  # Esto es el equivalente a: docker push [nombre completo de la imagen]
+  args:
+    - 'push'
+    - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA'
+
+# --- PASO 3: ESPECIFICAR QUÉ IMAGENES SE HAN CREADO ---
+# Esta sección le permite a Cloud Build saber qué artefactos se han generado.
+images:
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA'
+
+# --- OPCIONES: DEFINIR VARIABLES POR DEFECTO ---
+# Aquí podemos definir valores para nuestras variables si no se especifican en el disparador.
+substitutions:
+  _LOCATION: 'us-central1'                    # La región de tu Artifact Registry
+  _REPO_NAME: 'integration-web-site '       # El nombre de tu repositorio en Artifact Registry
+  _IMAGE_NAME: 'zoho-sync-job-tdd'                # El nombre que quieres para tu imagen

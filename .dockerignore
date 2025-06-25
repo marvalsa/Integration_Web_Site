@@ -13,6 +13,9 @@
 # Ignorar dependencias locales
 node_modules/
 
+# Ignorar archivos de prueba
+tddDevTest/
+
 # Ignorar archivos de configuración
 .env
 

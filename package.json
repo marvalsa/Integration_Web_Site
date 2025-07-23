@@ -16,6 +16,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google-cloud/storage": "^7.16.0",
     "@zohocrm/nodejs-sdk-6.0": "^4.0.0",
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",

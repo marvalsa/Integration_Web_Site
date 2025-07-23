@@ -6,8 +6,7 @@ services:
   sync_job:
     build: .
     container_name: sync_job_runner
-    environment:
-      # ... (tu environment no cambia) ...
+    environment:      
       - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
       - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
@@ -16,14 +15,18 @@ services:
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_PORT=${PG_PORT}
-      - PG_SSL=${PG_SSL}    
-    volumes:      
-      - :/app/logs
-   
+      - PG_SSL=${PG_SSL}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS} 
+    volumes:
+      - ./:/app
+    ports:
+      - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
+
   # Servicio de Base de Datos PostgreSQL
   postgres:
     image: postgres:16

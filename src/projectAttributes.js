@@ -2,7 +2,6 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
 
-
 class ProjectAttributesSync {
     constructor() {
         this.pool = new Pool({
@@ -22,21 +21,17 @@ class ProjectAttributesSync {
         };
     }
 
-    // (getZohoAccessToken - sin cambios, ya lanza error)
+    // --- Paso 1: Obtener Token (Sin cambios) ---
     async getZohoAccessToken() {
         try {
-            // Llamada a Zoho para refrescar token: URL y parámetros son correctos.
-            const response = await axios.post( // 
-                    'https://accounts.zoho.com/oauth/v2/token',
-                    null, // Body es null para refresh token grant
-                    {
-                        params: {
-                            refresh_token: this.zohoConfig.refreshToken,
-                            client_id: this.zohoConfig.clientId,
-                            client_secret: this.zohoConfig.clientSecret,
-                            grant_type: 'refresh_token'
-                        }
-                    }
+            const response = await axios.post(
+                'https://accounts.zoho.com/oauth/v2/token', null, {
+                params: {
+                    refresh_token: this.zohoConfig.refreshToken,
+                    client_id: this.zohoConfig.clientId,
+                    client_secret: this.zohoConfig.clientSecret,
+                    grant_type: 'refresh_token'
+                }}
             );
             const token = response.data.access_token;
             if (!token) throw new Error('Access token no recibido');
@@ -44,125 +39,128 @@ class ProjectAttributesSync {
             return token;
         } catch (error) {
             console.error('❌ Error al obtener token para Atributos:', error.response?.data || error.message);
-            throw error; // Correcto: Propaga el error
+            throw error;
         }
     }
 
-    // (getZohoAttributes - sin cambios, ya lanza error)
+    // --- Paso 2: Obtener Atributos de Zoho (CON PAGINACIÓN) ---
     async getZohoAttributes(accessToken) {
-        const query = {
-            select_query: `select id, Nombre_atributo from Parametros where Tipo ='Atributo' limit 0,200`
-        };
-        try {
-            console.log("ℹ️ Obteniendo atributos desde Zoho...");
-            const response = await axios.post(`${this.zohoConfig.baseURL}/coql`, query, {
-                headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
-            });
-            const data = response.data.data || [];
-            console.log(`✅ ${data.length} atributos recuperados de Zoho.`);
-            return data;
-        } catch (error) {
-            console.error('❌ Error al obtener atributos desde Zoho:', error.response?.data || error.message);
-            throw error; // Correcto: Propaga el error
+        let allAttributes = [];
+        let hasMoreRecords = true;
+        let page = 1;
+        const limit = 200;
+
+        console.log("ℹ️ Obteniendo atributos desde Zoho (con paginación)...");
+
+        while (hasMoreRecords) {
+            const query = {
+                select_query: `select id, Nombre_atributo from Parametros where Tipo = 'Atributo' limit ${(page - 1) * limit}, ${limit}`
+            };
+
+            try {
+                console.log(`  > Solicitando página ${page} de atributos...`);
+                const response = await axios.post(`${this.zohoConfig.baseURL}/coql`, query, {
+                    headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
+                });
+                
+                const data = response.data.data || [];
+                if (data.length > 0) {
+                    allAttributes = allAttributes.concat(data);
+                }
+                
+                hasMoreRecords = response.data.info?.more_records || false;
+                if (hasMoreRecords) {
+                    page++;
+                }
+            } catch (error) {
+                console.error(`❌ Error al obtener la página ${page} de atributos desde Zoho:`, error.response?.data || error.message);
+                throw error;
+            }
         }
+        
+        console.log(`✅ ${allAttributes.length} atributos recuperados de Zoho en total.`);
+        return allAttributes;
     }
 
-    // (insertAttributesIntoPostgres - sin cambios, ya lanza error)
+    // --- Paso 3: Insertar Atributos en PostgreSQL (MODIFICADO) ---
     async insertAttributesIntoPostgres(attributes) {
         if (!attributes || attributes.length === 0) {
             console.log("ℹ️ No hay atributos para insertar en PostgreSQL.");
-            return { processedCount: 0, errorCount: 0 }; // Devolver un objeto más informativo
+            return { processedCount: 0, errorCount: 0 };
         }
-
         const client = await this.pool.connect();
         let processedCount = 0;
         let errorCount = 0;
-        let currentAttributeId = null; // Usar ID para logging si es más fiable
 
         try {
             console.log(`ℹ️ Iniciando procesamiento de ${attributes.length} atributos en PostgreSQL...`);
             for (const attr of attributes) {
-                if (!attr.id || !attr.Nombre_atributo) { // Validar datos del atributo
-                    console.log(`⚠️ Atributo inválido (falta id o Nombre_atributo): ${JSON.stringify(attr)}. Omitiendo.`);
+                if (!attr.id || !attr.Nombre_atributo) {
+                    console.warn(`⚠️ Atributo inválido (falta id o Nombre_atributo): ${JSON.stringify(attr)}. Omitiendo.`);
                     errorCount++;
                     continue;
                 }
-                currentAttributeId = attr.id;
+                
+                // === AJUSTE PRINCIPAL: Se inserta el texto directamente ===
+                const attributeName = attr.Nombre_atributo;
 
-                // Query para insertar o actualizar
+                // Como la tabla se trunca antes, una simple inserción es suficiente.
+                // Usamos UPSERT (ON CONFLICT) por si se decidiera quitar el TRUNCATE en el futuro.
                 const upsertQuery = `
                     INSERT INTO public."Project_Attributes" (id, "name")
                     VALUES ($1, $2)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name;
                 `;
-                // NOTA: `res.command` podría ser 'INSERT' o 'UPDATE'.
-                // `res.rowCount` será 1 si se insertó o se actualizó (incluso si el valor no cambió).
 
-                const res = await client.query(upsertQuery, [attr.id, attr.Nombre_atributo]);
-
+                const res = await client.query(upsertQuery, [attr.id, attributeName]);
+                
                 if (res.rowCount > 0) {
-                    // PostgreSQL >= 9.5, `res.command` puede ser 'INSERT' o 'UPDATE'
-                    // Para versiones anteriores o si no es fiable, este log es genérico.
-                    console.log(`✅ Atributo ID ${attr.id} ('${attr.Nombre_atributo}') procesado (insertado/actualizado).`);
                     processedCount++;
-                } else {
-                    // Este caso sería raro con la query actual si la operación ON CONFLICT se ejecuta,
-                    // a menos que haya un trigger o regla que prevenga la modificación.
-                    // Si el `id` no existe, es un INSERT (rowCount=1).
-                    // Si el `id` existe, es un UPDATE (rowCount=1).
-                    console.log(`⚠️ Atributo ID ${attr.id} ('${attr.Nombre_atributo}') no afectó filas. Comando: ${res.command}.`);
-                    // Podrías o no contar esto como un error dependiendo de la causa.
                 }
             }
-            console.log(`✅ Procesamiento de atributos completado. ${processedCount} atributos procesados, ${errorCount} atributos inválidos omitidos.`);
+            console.log(`✅ Procesamiento de atributos completado. ${processedCount} insertados/actualizados, ${errorCount} omitidos.`);
             return { processedCount, errorCount };
 
         } catch (error) {
-            console.error(`❌ Error al procesar atributo en PostgreSQL (último intento ID: ${currentAttributeId}):`, error.message);
-            throw error; // Propagar el error para detener el flujo general
+            console.error(`❌ Error al procesar atributo en PostgreSQL:`, error);
+            throw error;
         } finally {
             client.release();
         }
     }
-    
-    // (run - sin cambios, ya lanza error)
+
+    // --- Método principal para ejecutar la sincronización ---
     async run() {
-        let connectionClosed = false;
         try {
             console.log('🚀 Iniciando sincronización de Atributos de Proyecto...');
-            // Prueba conexión PG (implícita al obtener cliente o explícita)
+            
+            // La estrategia de truncar la tabla asegura una sincronización limpia y completa.
+            console.log('🟡 Preparando para truncar la tabla "Project_Attributes"...');
             const client = await this.pool.connect();
-            console.log('✅ Conexión a PostgreSQL verificada para Atributos.');
-            client.release(); // Liberar cliente de prueba
-
-            const token = await this.getZohoAccessToken(); // Lanza error si falla
-            const attributes = await this.getZohoAttributes(token); // Lanza error si falla
-            const insertedCount = await this.insertAttributesIntoPostgres(attributes); // Ahora lanza error si falla
-
-            console.log(`✅ Sincronización de Atributos de Proyecto finalizada. ${insertedCount} nuevos atributos insertados.`);
-            // Si llegamos aquí, todo fue exitoso
+            try {
+                await client.query('TRUNCATE TABLE public."Project_Attributes" RESTART IDENTITY CASCADE;');
+                console.log('✅ Tabla "Project_Attributes" truncada con éxito.');
+            } finally {
+                client.release();
+            }
+            
+            const token = await this.getZohoAccessToken();
+            const attributes = await this.getZohoAttributes(token);
+            const result = await this.insertAttributesIntoPostgres(attributes);
+            
+            console.log(`✅ Sincronización de Atributos finalizada. ${result.processedCount} atributos procesados.`);
 
         } catch (error) {
-            // --- CAMBIO AQUÍ ---
-            // Este catch captura errores de: conexión PG, getToken, getAttributes, o insertAttributes.
-            console.error('🚨 ERROR CRÍTICO durante la sincronización de Atributos. El proceso se detendrá.', error);
-            // Re-lanzar el error para que el script que llama a run() (el IIFE) sepa que falló.
-            throw error;
-
+            console.error('🚨 ERROR CRÍTICO durante la sincronización de Atributos.', error);
+            throw error; // Lanzar el error para que el proceso principal lo capture.
         } finally {
-            // Asegurarse de cerrar el pool solo una vez y si existe
-            if (this.pool && !connectionClosed) {
-                console.log('🔌 Cerrando pool de conexiones PostgreSQL para Atributos...');
-                await this.pool.end().catch(err => console.error('❌ Error al cerrar pool PG para Atributos:', err));
-                connectionClosed = true;
-                console.log('🔌 Pool de conexiones PostgreSQL cerrado.');
+            if (this.pool) {
+                await this.pool.end();
+                console.log('🔌 Pool de conexiones para Atributos cerrado.');
             }
         }
     }
 }
 
 module.exports = ProjectAttributesSync;
-
-// ... (código para ejecución directa sin cambios)
-

@@ -19,3 +19,4 @@ tddDevTest/
 # Archivos del sistema operativo
 .DS_Store
 Thumbs.db
+gcp-credentials.json

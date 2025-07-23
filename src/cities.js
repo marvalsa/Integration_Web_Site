@@ -2,8 +2,8 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const axios = require('axios');
 
-
 class CitiesSync {
+    
     constructor() {
         this.pool = new Pool({
             host: process.env.PG_HOST,
@@ -21,22 +21,17 @@ class CitiesSync {
             baseURL: 'https://www.zohoapis.com/crm/v2'
         };
     }
-
-    // Este método es genérico y no necesita cambios.
+    
     async getZohoAccessToken() {
         try {
-            const response = await axios.post(
-                'https://accounts.zoho.com/oauth/v2/token',
-                null,
-                {
-                    params: {
-                        refresh_token: this.zohoConfig.refreshToken,
-                        client_id: this.zohoConfig.clientId,
-                        client_secret: this.zohoConfig.clientSecret,
-                        grant_type: 'refresh_token'
-                    }
+            const response = await axios.post('https://accounts.zoho.com/oauth/v2/token', null, {
+                params: {
+                    refresh_token: this.zohoConfig.refreshToken,
+                    client_id: this.zohoConfig.clientId,
+                    client_secret: this.zohoConfig.clientSecret,
+                    grant_type: 'refresh_token'
                 }
-            );
+            });
             const token = response.data.access_token;
             if (!token) throw new Error('Access token no recibido de Zoho');
             console.log('✅ Token obtenido para sincronización de Ciudades');
@@ -47,140 +42,142 @@ class CitiesSync {
         }
     }
 
-    /**
-     * Obtiene las ciudades desde Zoho CRM usando la consulta COQL especificada.
-     * @param {string} accessToken - El token de acceso de Zoho.
-     * @returns {Promise<Array>} Una lista de objetos de ciudad.
-     */
     async getZohoCities(accessToken) {
-        // La consulta COQL que solicitaste
-        const query = {
-            select_query: "SELECT Ciudad.Name, Ciudad.id FROM Proyectos_Comerciales WHERE Ciudad is not null limit 0, 200"
-        };
-        try {
-            console.log("ℹ️ Obteniendo ciudades desde Zoho...");
-            const response = await axios.post(`${this.zohoConfig.baseURL}/coql`, query, {
-                headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
-            });
-            const data = response.data.data || [];
-            console.log(`✅ ${data.length} registros de ciudad recuperados de Zoho.`);
-            return data;
-        } catch (error) {
-            console.error('❌ Error al obtener ciudades desde Zoho:', error.response?.data || error.message);
-            throw error;
-        }
-    }
+        let allCities = [];
+        let hasMoreRecords = true;
+        let page = 1;
+        const limit = 200;
 
-    /**
-     * Inserta o actualiza las ciudades en la base de datos PostgreSQL.
-     * Filtra los datos para procesar solo ciudades únicas.
-     * @param {Array} cities - El array de ciudades obtenido de Zoho.
-     * @returns {Promise<Object>} Un objeto con el conteo de ciudades procesadas y errores.
-     */
+        console.log("ℹ️ Obteniendo ciudades desde Zoho (con paginación)...");
+
+        while (hasMoreRecords) {
+            const query = {
+                select_query: `SELECT Ciudad.Name, Ciudad.id FROM Proyectos_Comerciales WHERE Ciudad is not null limit ${(page - 1) * limit}, ${limit}`
+            };
+
+            try {
+                console.log(`  > Solicitando página ${page}...`);
+                const response = await axios.post(`${this.zohoConfig.baseURL}/coql`, query, {
+                    headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
+                });
+                
+                const data = response.data.data || [];
+                if (data.length > 0) {
+                    allCities = allCities.concat(data);
+                }
+
+                hasMoreRecords = response.data.info?.more_records || false;
+                
+                if (hasMoreRecords) {
+                    page++;
+                }
+
+            } catch (error) {
+                console.error(`❌ Error al obtener la página ${page} de ciudades desde Zoho:`, error.response?.data || error.message);
+                throw error;
+            }
+        }
+        
+        console.log(`✅ ${allCities.length} registros de ciudad recuperados de Zoho en total.`);
+        return allCities;
+    }
+    
     async insertCitiesIntoPostgres(cities) {
         if (!cities || cities.length === 0) {
-            console.log("ℹ️ No hay ciudades para insertar en PostgreSQL.");
-            return { processedCount: 0, errorCount: 0 };
+            console.log("ℹ️ No hay ciudades para insertar o actualizar.");
+            return;
         }
-
-        // --- LÓGICA CLAVE PARA OBTENER CIUDADES ÚNICAS ---
-        // Usamos un Map para filtrar los resultados y quedarnos solo con una entrada por cada 'Ciudad.id'.
+        
         const citiesMap = new Map();
-        for (const city of cities) {
-            // La llave del mapa será el ID de la ciudad. Si ya existe, se sobrescribe,
-            // garantizando que al final solo tengamos un registro por ID.
-            if (city['Ciudad.id']) { // Solo procesar si tiene un ID de ciudad
+        for (const city of cities) {            
+            if (city['Ciudad.id']) { 
                  citiesMap.set(city['Ciudad.id'], city);
             }
         }
         const uniqueCities = Array.from(citiesMap.values());
-        console.log(`ℹ️ Se encontraron ${uniqueCities.length} ciudades únicas de un total de ${cities.length} registros.`);
-        // ----------------------------------------------------
+        console.log(`ℹ️ Se encontraron ${uniqueCities.length} ciudades únicas para procesar.`);        
 
         const client = await this.pool.connect();
-        let processedCount = 0;
-        let errorCount = 0;
-        let currentCityId = null;
-
+        
         try {
             console.log(`ℹ️ Iniciando procesamiento de ${uniqueCities.length} ciudades en PostgreSQL...`);
-            for (const city of uniqueCities) {
-                // Las llaves tienen un punto, por lo que accedemos con ['...']
-                const cityId = city['Ciudad.id'];
-                const cityName = city['Ciudad.Name'];
+            let processedCount = 0;
+            let errorCount = 0;
+            
+            for (const city of uniqueCities) {                
+                // AJUSTE: Asegurar que el ID se maneje como string para consistencia
+                const cityId = city['Ciudad.id'].toString();
+                const fullCityName = city['Ciudad.Name'];
 
-                if (!cityId || !cityName) {
-                    console.log(`⚠️ Registro de ciudad inválido (falta id o nombre): ${JSON.stringify(city)}. Omitiendo.`);
+                if (!cityId || !fullCityName) {
+                    console.warn(`⚠️ Registro de ciudad inválido: ${JSON.stringify(city)}. Omitiendo.`);
                     errorCount++;
                     continue;
                 }
-                currentCityId = cityId;
-
-                // Query para insertar o actualizar (UPSERT) en la tabla "Cities"
-                const upsertQuery = `
-                    INSERT INTO public."Cities" (id, "name", is_public)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (id) DO UPDATE SET
-                        "name" = EXCLUDED."name",
-                        is_public = EXCLUDED.is_public;
-                `;
                 
-                // Ejecutamos la consulta con los valores: id, nombre y 'true' para is_public.
-                const res = await client.query(upsertQuery, [cityId, cityName, true]);
+                // === AJUSTE PRINCIPAL: Tomar solo la primera parte del nombre y estandarizarlo ===
+                const cityName = fullCityName.split('/')[0].trim().toUpperCase();
 
-                if (res.rowCount > 0) {
-                    console.log(`✅ Ciudad ID ${cityId} ('${cityName}') procesada (insertada/actualizada).`);
-                    processedCount++;
-                } else {
-                    console.log(`⚠️ Ciudad ID ${cityId} ('${cityName}') no afectó filas. Comando: ${res.command}.`);
+                if (!cityName) {
+                    console.warn(`⚠️ Nombre de ciudad vacío después de limpiar: "${fullCityName}". Omitiendo.`);
+                    errorCount++;
+                    continue;
+                }
+                
+                try {
+                    const upsertQuery = `
+                        INSERT INTO public."Cities" (id, "name", is_public)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (id) DO UPDATE SET
+                            "name" = EXCLUDED."name",
+                            is_public = EXCLUDED.is_public;                           
+                    `;
+                                        
+                    const res = await client.query(upsertQuery, [cityId, cityName, true]);
+                    if (res.rowCount > 0) {
+                        processedCount++;
+                    }
+
+                } catch (dbError) {
+                    if (dbError.code === '23505' && dbError.constraint === 'Cities_name_key') {
+                        console.error(`  ❌ Error de Unicidad para Ciudad ID ${cityId}: El nombre '${cityName}' ya está en uso por otra ciudad con un ID diferente. Omitiendo.`);
+                        errorCount++;
+                    } else {
+                        console.error(`  ❌ Error en BD al procesar Ciudad ID ${cityId} ('${cityName}'):`, dbError.message);
+                        errorCount++;
+                    }
                 }
             }
-            console.log(`✅ Procesamiento de ciudades completado. ${processedCount} ciudades procesadas, ${errorCount} registros inválidos omitidos.`);
-            return { processedCount, errorCount };
-
+            console.log(`✅ Procesamiento finalizado. ${processedCount} ciudades insertadas/actualizadas, ${errorCount} errores manejados.`);
+            
         } catch (error) {
-            // Manejo de errores, incluyendo violación de la constraint UNIQUE en "name"
-            if (error.code === '23505' && error.constraint === 'Cities_name_key') {
-                 console.error(`❌ Error de unicidad al procesar en PostgreSQL. Es posible que un ID de ciudad diferente intente usar un nombre que ya existe: ${error.detail}`);
-            } else {
-                console.error(`❌ Error al procesar ciudad en PostgreSQL (último intento ID: ${currentCityId}):`, error.message);
-            }
-            throw error; // Propagar el error para detener el flujo general
+            console.error(`❌ Error crítico durante el procesamiento de ciudades en PostgreSQL:`, error);
+            throw error;
         } finally {
             client.release();
         }
     }
     
-    // Método principal que orquesta todo el proceso
     async run() {
-        let connectionClosed = false;
         try {
             console.log('🚀 Iniciando sincronización de Ciudades...');
-            const client = await this.pool.connect();
-            console.log('✅ Conexión a PostgreSQL verificada para Ciudades.');
-            client.release();
-
+            
             const token = await this.getZohoAccessToken();
             const citiesFromZoho = await this.getZohoCities(token);
-            const result = await this.insertCitiesIntoPostgres(citiesFromZoho);
-
-            console.log(`✅ Sincronización de Ciudades finalizada. ${result.processedCount} ciudades procesadas.`);
+            await this.insertCitiesIntoPostgres(citiesFromZoho);
+            
+            console.log('✅ Sincronización de Ciudades finalizada con éxito.');
 
         } catch (error) {
-            console.error('🚨 ERROR CRÍTICO durante la sincronización de Ciudades. El proceso se detendrá.', error);
-            throw error;
-
+            console.error('🚨 ERROR CRÍTICO durante la sincronización de Ciudades. El proceso se detendrá.');
         } finally {
-            if (this.pool && !connectionClosed) {
+            if (this.pool) {
                 console.log('🔌 Cerrando pool de conexiones PostgreSQL para Ciudades...');
-                await this.pool.end().catch(err => console.error('❌ Error al cerrar pool PG para Ciudades:', err));
-                connectionClosed = true;
+                await this.pool.end();
                 console.log('🔌 Pool de conexiones PostgreSQL cerrado.');
             }
         }
     }
 }
 
-// Exportar la clase para poder usarla en otros archivos
 module.exports = CitiesSync;
-

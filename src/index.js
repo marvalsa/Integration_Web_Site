@@ -1,74 +1,50 @@
-const express = require('express')
-const fs = require('fs');
-const path = require('path');
-// Imports de los módulos de sincronización
+const express = require('express');
+
+// --- Importaciones de los módulos de sincronización ---
 const MegaSync = require('./megaProyectos');
 const AttributeSync = require('./projectAttributes');
 const ZohoToPostgresSyncProjects = require('./projects');
 const CitiesSync = require('./cities');
+const ProjectStatesSync = require('./projectStatus'); 
 
-const app = express()
+const app = express();
+const port = process.env.PORT || 3000;
 
-const port = process.env.PORT || 3000
- 
 app.get('/', (req, res) => {
-  res.send('Hello World!')
+  res.send('Conexion exitosa Microservicio API GCP!');
 });
 
-app.post('/', async (req, res) => {
-  console.log("==================================================================");
-    console.log("🚀 INICIANDO PROCESO DE SINCRONIZACIÓN COMPLETO");
-    console.log("==================================================================");
-
+// --- RUTA DE SINCRONIZACIÓN OPTIMIZADA (ENFOQUE HÍBRIDO) ---
+app.post('/', async (req, res) => {  
+    console.log("INICIANDO PROCESO DE SINCRONIZACIÓN COMPLETO (MODO HÍBRIDO)");
+    
     try {
-      // Instancias de sincronización
-        const syncCities = new CitiesSync();
-        const syncMega = new MegaSync();
-        const syncAttributes = new AttributeSync();
-        const syncProjects = new ZohoToPostgresSyncProjects();
-
+        // --- PASO 1: Sincronizar tablas base en PARALELO ---
+        console.log("\n--- [PASO 1/3] Sincronizando en paralelo: Ciudades, Estados y Atributos ---");
         await Promise.all([
-            syncCities.run(),
-            syncMega.run(),
-            syncAttributes.run(),
-            syncProjects.run()
+            (new CitiesSync()).run(),
+            (new ProjectStatesSync()).run(),
+            (new AttributeSync()).run()
         ]);
+        console.log("--- [PASO 1/3] Finalizado: Ciudades, Estados y Atributos sincronizados ---");
 
-        // // --- Paso 1: Ciudades ---
-        // // Se ejecuta primero para que las FK de Proyectos funcionen
-        // console.log("\n--- PASO 1: CIUDADES ---");
-        
-        // await syncCities.run();
-        // console.log("✅ Sincronización de Ciudades completada.");
+        // --- PASO 2: Sincronizar tablas con dependencias (secuencial) ---
+        console.log("\n--- [PASO 2/3] Sincronizando Mega Proyectos ---");
+        await (new MegaSync()).run();
+        console.log("--- [PASO 2/3] Finalizado: Mega Proyectos sincronizados ---");
 
-        // // --- Paso 2: MegaProyectos ---
-        // // Se ejecuta para que las FK de Proyectos funcionen
-        // console.log("\n--- PASO 2: MEGAPROYECTOS ---");
-        
-        // await syncMega.run();
-        // console.log("✅ Sincronización de MegaProyectos completada.");
+        // --- PASO 3: Sincronizar tabla principal que depende de todas las demás ---
+        console.log("\n--- [PASO 3/3] Sincronizando Proyectos y Tipologías ---");
+        await (new ZohoToPostgresSyncProjects()).run();
+        console.log("--- [PASO 3/3] Finalizado: Proyectos y Tipologías sincronizados ---");
 
-        // // --- Paso 3: Atributos ---
-        // console.log("\n--- PASO 3: ATRIBUTOS ---");
-        
-        // await syncAttributes.run();
-        // console.log("✅ Sincronización de Atributos completada.");
 
-        // // --- Paso 4: Proyectos (y sus Tipologías) ---
-        // // Se ejecuta al final ya que depende de los anteriores
-        // console.log("\n--- PASO 4: PROYECTOS Y TIPOLOGÍAS ---");
-        
-        // await syncProjects.run();
-        // console.log("✅ Sincronización de Proyectos completada.");
+        const successMessage = 'PROCESO DE SINCRONIZACIÓN HÍBRIDO COMPLETADO CON ÉXITO';
+        console.log(`\n${successMessage}`);
+        res.status(200).send(successMessage);
 
-        // console.log("\n==================================================================");
-        // console.log("🎉 ¡TODAS LAS SINCRONIZACIONES SE HAN EJECUTADO!");
-        // console.log("==================================================================");
-
-        res.send('Proceso de sincronización completado.');
     } catch (error) {
-        console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        console.error("🚨 ERROR CRÍTICO: El proceso de sincronización se detuvo.");
+        console.error("\nERROR CRÍTICO: El proceso de sincronización se detuvo.");
         console.error(`   Mensaje: ${error.message}`);
         
         if (error.stack) {
@@ -77,16 +53,12 @@ app.post('/', async (req, res) => {
         if (error.response?.data) {
             console.error(`   Respuesta del API (Zoho): ${JSON.stringify(error.response.data)}`);
         }
-        res.status(500).send('Error en el proceso de sincronización.');
+        res.status(500).send('Error crítico en el proceso de sincronización. Revise los logs del servidor.');
     } finally {
-        // El bloque `finally` se ejecuta siempre, haya habido éxito o error.
-        console.log("🏁 Proceso de sincronización finalizado.");
-        // <<< SE ELIMINÓ TODA LA LÓGICA DE LECTURA Y ANÁLISIS DEL ARCHIVO DE LOG.
+        console.log("\n🏁 Proceso de sincronización finalizado (con o sin errores).");
     }
-})
+});
  
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
-
- 
+  console.log(`[${new Date().toLocaleString()}] Server development activo - escuchando en el puerto ${port}`);
+});

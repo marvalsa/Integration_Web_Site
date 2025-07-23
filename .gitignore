@@ -19,4 +19,7 @@ tddDevTest/
 .DS_Store
 Thumbs.db
 
+#GCP
+gcp-credentials.json
+
 

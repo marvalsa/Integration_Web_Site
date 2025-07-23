@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Archivos sensibles
+.env
+# gcp-credentials.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TDD Test DEV
+tddDevTest/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+gcp-credentials.json
+
+gcp-credentials.json

@@ -21,7 +21,7 @@ class ProjectAttributesSync {
         };
     }
 
-    // --- Paso 1: Obtener Token (Sin cambios) ---
+    // --- Paso 1: Obtener Token
     async getZohoAccessToken() {
         try {
             const response = await axios.post(
@@ -43,7 +43,7 @@ class ProjectAttributesSync {
         }
     }
 
-    // --- Paso 2: Obtener Atributos de Zoho (CON PAGINACIÓN) ---
+    // --- Paso 2: Obtener Atributos de Zoho
     async getZohoAttributes(accessToken) {
         let allAttributes = [];
         let hasMoreRecords = true;
@@ -54,7 +54,7 @@ class ProjectAttributesSync {
 
         while (hasMoreRecords) {
             const query = {
-                select_query: `select id, Nombre_atributo from Parametros where Tipo = 'Atributo' limit ${(page - 1) * limit}, ${limit}`
+                select_query: `select id, Nombre_atributo, Icon_cdn_google from Parametros where Tipo = 'Atributo' limit ${(page - 1) * limit}, ${limit}`
             };
 
             try {
@@ -107,13 +107,15 @@ class ProjectAttributesSync {
                 // Como la tabla se trunca antes, una simple inserción es suficiente.
                 // Usamos UPSERT (ON CONFLICT) por si se decidiera quitar el TRUNCATE en el futuro.
                 const upsertQuery = `
-                    INSERT INTO public."Project_Attributes" (id, "name")
-                    VALUES ($1, $2)
+                    INSERT INTO public."Project_Attributes" (id, "name", icon)
+                    VALUES ($1, $2, $3)
                     ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name;
+                        name = EXCLUDED.name,
+                        icon = EXCLUDED.icon;
                 `;
-
-                const res = await client.query(upsertQuery, [attr.id, attributeName]);
+                
+                const icon = attr.Icon_cdn_google ? attr.Icon_cdn_google.toLowerCase() : null;                
+                const res = await client.query(upsertQuery, [attr.id.toString(), attributeName, icon]);
                 
                 if (res.rowCount > 0) {
                     processedCount++;

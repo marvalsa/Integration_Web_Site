@@ -199,7 +199,7 @@ class ZohoToPostgresSyncProjects {
                 parseFloat(project.Latitud) || 0, 
                 parseFloat(project.Longitud) || 0, 
                 true,
-                attributesJson, // AJUSTE: Usar la versión JSON
+                attributesJson, 
                 project['Ciudad.id'] ? project['Ciudad.id'].toString() : null,
                 salesRoomDetails?.Direccion || null,
                 salesRoomDetails?.Horario || null,
@@ -233,12 +233,27 @@ class ZohoToPostgresSyncProjects {
     }
     
     async insertTypologies(projectHc, typologies) {
+        // La condición que pediste ya no es solo un comentario, ahora es parte de la lógica.
         if (!typologies || typologies.length === 0) return;
 
         const client = await this.pool.connect();
         try {
             for (const t of typologies) {
+                // Validación principal: Asegurarnos de que la tipología tiene un ID.
                 if (!t.id) continue;
+
+                // AJUSTE CLAVE: Verificar que 'Und_Disponibles' sea mayor o igual a 1.
+                // Lo convertimos a número para asegurar la comparación.
+                const availableUnits = parseInt(t.Und_Disponibles, 10);
+                
+                // Si 'availableUnits' no es un número (NaN) o es menor que 1,
+                // saltamos a la siguiente tipología del bucle con 'continue'.
+                if (isNaN(availableUnits) || availableUnits < 1) {
+                    console.log(`ℹ️ Omitiendo tipología "${t.Nombre || t.id}" para proyecto ${projectHc} por no tener unidades disponibles (valor: ${t.Und_Disponibles}).`);
+                    continue; 
+                }
+
+                // Si el código llega hasta aquí, significa que la tipología tiene unidades disponibles.
                 const query = `
                     INSERT INTO public."Typologies" (
                         id, project_id, "name", description, price_from, rooms, bathrooms,
@@ -265,7 +280,7 @@ class ZohoToPostgresSyncProjects {
                     parseInt(t.Separacion, 10) || null,
                     parseInt(t.Cuota_inicial1, 10) || null, 
                     parseInt(t.Plazo_en_meses, 10) || null,
-                    parseInt(t.Und_Disponibles, 10) || null
+                    availableUnits // Usamos la variable que ya parseamos
                 ];
                 await client.query(query, values);
             }

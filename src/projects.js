@@ -69,7 +69,8 @@ class ZohoToPostgresSyncProjects {
                     SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento,
                     Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id,
                     Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta,
-                    Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug
+                    Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug,
+                    Precio_en_SMMLV
                 FROM Proyectos_Comerciales
                 WHERE id is not null
                 LIMIT ${offset}, 200
@@ -294,6 +295,12 @@ class ZohoToPostgresSyncProjects {
           )
         : parseInt(project["Ba_os"], 10) || 0;
 
+      // Ajuste [24/07/25] Mostrar campo si es true
+      const salaryMinimumCount =
+        project.Precio_en_SMMLV === true
+          ? parseInt(project.Cantidad_SMMLV, 10) || null
+          : null;
+
       const values = [
         hcValue,
         project.Name || null,
@@ -302,7 +309,8 @@ class ZohoToPostgresSyncProjects {
         project.Descripcion_corta || null,
         project.Descripcion_larga || null,
         project.SIG || null,
-        parseInt(project.Cantidad_SMMLV, 10) || null,
+        // parseInt(project.Cantidad_SMMLV, 10) || null,
+        salaryMinimumCount,
         project.Descripcion_descuento || null,
         parseInt(project.Precios_desde, 10) || null,
         parseInt(project.Precios_hasta, 10) || null,

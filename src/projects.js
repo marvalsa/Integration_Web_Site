@@ -147,16 +147,34 @@ class ZohoToPostgresSyncProjects {
                     city, sales_room_address, sales_room_schedule_attention, sales_room_latitude, sales_room_longitude, slug
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
                 ON CONFLICT (hc) DO UPDATE SET
-                    name = EXCLUDED.name, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
-                    small_description = EXCLUDED.small_description, long_description = EXCLUDED.long_description, sic = EXCLUDED.sic,
-                    salary_minimum_count = EXCLUDED.salary_minimum_count, discount_description = EXCLUDED.discount_description,
-                    price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
-                    "type" = EXCLUDED.type, mega_project_id = EXCLUDED.mega_project_id, status = EXCLUDED.status,
-                    highlighted = EXCLUDED.highlighted, built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area,
-                    rooms = EXCLUDED.rooms, bathrooms = EXCLUDED.bathrooms, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-                    is_public = EXCLUDED.is_public, "attributes" = EXCLUDED.attributes, city = EXCLUDED.city,
-                    sales_room_address = EXCLUDED.sales_room_address, sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
-                    sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude, slug = EXCLUDED.slug;
+                    name = EXCLUDED.name, 
+                    slogan = EXCLUDED.slogan, 
+                    address = EXCLUDED.address,
+                    small_description = EXCLUDED.small_description, 
+                    long_description = EXCLUDED.long_description, 
+                    sic = EXCLUDED.sic,
+                    salary_minimum_count = EXCLUDED.salary_minimum_count, 
+                    discount_description = EXCLUDED.discount_description,
+                    price_from_general = EXCLUDED.price_from_general, 
+                    price_up_general = EXCLUDED.price_up_general,
+                    "type" = EXCLUDED.type, 
+                    mega_project_id = EXCLUDED.mega_project_id, 
+                    status = EXCLUDED.status,
+                    highlighted = EXCLUDED.highlighted, 
+                    built_area = EXCLUDED.built_area, 
+                    private_area = EXCLUDED.private_area,
+                    rooms = EXCLUDED.rooms, 
+                    bathrooms = EXCLUDED.bathrooms, 
+                    latitude = EXCLUDED.latitude, 
+                    longitude = EXCLUDED.longitude,
+                    is_public = EXCLUDED.is_public, 
+                    "attributes" = EXCLUDED.attributes, 
+                    city = EXCLUDED.city,
+                    sales_room_address = EXCLUDED.sales_room_address, 
+                    sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
+                    sales_room_latitude = EXCLUDED.sales_room_latitude, 
+                    sales_room_longitude = EXCLUDED.sales_room_longitude, 
+                    slug = EXCLUDED.slug;
             `;
 
             const statusMap = { 'sobre planos': '1000000000000000001', 'en construccion': '1000000000000000002', 'lanzamiento': '1000000000000000003', 'entrega inmediata': '1000000000000000004' };

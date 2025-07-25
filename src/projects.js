@@ -19,7 +19,7 @@ class ZohoToPostgresSyncProjects {
       clientId: process.env.ZOHO_CLIENT_ID,
       clientSecret: process.env.ZOHO_CLIENT_SECRET,
       refreshToken: process.env.ZOHO_REFRESH_TOKEN,
-      baseURL: "https://www.zohoapis.com/crm/v7", // <-- El usuario mencionó v7, pero la base es v2. Se usa esta.
+      baseURL: "https://www.zohoapis.com/crm/v7", //  El usuario mencionó v7 para proyectos relacionados [25/07/25]
     };
 
     try {
@@ -34,6 +34,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Obtener token zoho crm
   async getZohoAccessToken() {
     try {
       const response = await axios.post(
@@ -61,6 +62,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Obtener Proyectos Comerciales de CRM
   async getZohoProjects(accessToken, offset = 0) {
     const coqlQueryObject = {
       select_query: `
@@ -105,7 +107,44 @@ class ZohoToPostgresSyncProjects {
       throw error;
     }
   }
-  // Proyectos relacionados [24/07/25]
+
+  //Nuevo [25/07/25] StatusProject valida en projects
+  async getStatusObjectFromDb(stateName, client) {
+    if (!stateName || typeof stateName !== "string") {
+      return null;
+    }
+    const normalizedStateName = stateName.trim();
+    const query = `
+      SELECT id, name 
+      FROM public."Project_Status" 
+      WHERE LOWER(name) = LOWER($1) 
+      LIMIT 1;
+    `;
+
+    try {
+      const result = await client.query(query, [normalizedStateName]);
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        return {
+          id: row.id.toString(),
+          name: row.name,
+        };
+      } else {
+        console.warn(
+          `⚠️ Estado no encontrado en la DB: "${stateName}". Se guardará como nulo.`
+        );
+        return null;
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error al buscar el estado "${stateName}" en la base de datos:`,
+        error
+      );
+      return null;
+    }
+  }
+
+  //Nuevo [24/07/25]  Proyectos relacionados [24/07/25]
   async getRelatedProjectIds(accessToken, projectId) {
     if (!projectId) {
       return [];
@@ -149,6 +188,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Obtener atributos por proyecto comercial
   async getProjectAttributes(accessToken, parentId) {
     try {
       const response = await axios.get(
@@ -173,6 +213,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Información nueva salas de ventas [21)07/25]
   async getSalesRoomDetails(accessToken, salesRoomId) {
     if (!salesRoomId) return null;
     try {
@@ -202,6 +243,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Insertar proyectos comerciales a projects
   async insertProjectIntoPostgres(project, accessToken) {
     if (!project?.id) {
       console.warn(
@@ -245,19 +287,14 @@ class ZohoToPostgresSyncProjects {
                     sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude, slug = EXCLUDED.slug,
                     relation_projects = EXCLUDED.relation_projects;
             `;
-
-      const statusMap = {
-        "sobre planos": "1000000000000000001",
-        "en construccion": "1000000000000000002",
-        lanzamiento: "1000000000000000003",
-        "entrega inmediata": "1000000000000000004",
-      };
-      const statusFromZoho = project.Estado?.toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-      const statusId = statusMap[statusFromZoho] || null;
-      const statusForDb = statusId ? JSON.stringify([statusId]) : null;
+      // Ajuste de StatusProject de db Project_Status [25/07/25]
+      const statusObject = await this.getStatusObjectFromDb(
+        project.Estado,
+        client
+      );
+      const statusForDb = statusObject
+        ? JSON.stringify([statusObject.id])
+        : null;
 
       const attributesJson =
         attributeIdsArray?.length > 0
@@ -318,7 +355,7 @@ class ZohoToPostgresSyncProjects {
         project["Mega_Proyecto.id"]
           ? project["Mega_Proyecto.id"].toString()
           : null,
-        statusForDb,
+        statusForDb, // <-- Aquí se usa el nuevo valor JSON
         project.Proyecto_destacado || false,
         parseFloat(project.Area_construida_desde) || 0,
         parseFloat(project.Area_construida_hasta) || 0,
@@ -356,7 +393,8 @@ class ZohoToPostgresSyncProjects {
       client.release();
     }
   }
-
+  
+  //Obtener Tipologias de proyectos comerciales crm
   async getTypologiesFromZoho(accessToken, parentId) {
     try {
       const response = await axios.get(
@@ -376,6 +414,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Insertar tipologias db
   async insertTypologies(projectHc, typologies) {
     if (!typologies || typologies.length === 0) return;
 
@@ -383,9 +422,7 @@ class ZohoToPostgresSyncProjects {
     try {
       for (const t of typologies) {
         if (!t.id) continue;
-
         const availableUnits = parseInt(t.Und_Disponibles, 10);
-
         if (isNaN(availableUnits) || availableUnits < 1) {
           console.log(
             `ℹ️ Omitiendo tipología "${
@@ -438,6 +475,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Obtener Galley y urban plans de GCP
   async getGCSFilePublicUrls(directoryPath) {
     try {
       const [files] = await this.bucket.getFiles({ prefix: directoryPath });
@@ -456,6 +494,7 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  //Insertar GCP por projects
   async syncProjectFilesInGCS(projectId, typologies) {
     if (!projectId) return;
     const projectIdStr = projectId.toString();
@@ -499,14 +538,13 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
+  // Inicar sincronizacion de data
   async run() {
     try {
       console.log(
         "🚀 Iniciando sincronización de Proyectos, Tipologías y Archivos GCS..."
       );
-
       const token = await this.getZohoAccessToken();
-
       console.log('🟡 Preparando para truncar la tabla "Typologies"...');
       const client = await this.pool.connect();
       try {
@@ -517,7 +555,6 @@ class ZohoToPostgresSyncProjects {
       } finally {
         client.release();
       }
-
       let offset = 0;
       let more = true;
       while (more) {

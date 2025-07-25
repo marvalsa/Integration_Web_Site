@@ -22,7 +22,7 @@ class ZohoToPostgresSync {
     };
   }
 
-  // --- Paso 1: Obtener Token ---
+  // Obtener Token zoho
   async getZohoAccessToken() {
     try {
       const response = await axios.post(
@@ -50,13 +50,13 @@ class ZohoToPostgresSync {
     }
   }
 
-  // --- Paso 2: Obtener Datos de Mega Proyectos  ---
+  // Obtener Datos de Mega Proyectos
   async getZohoProjectData(accessToken, offset = 0) {
     const query = {
       select_query: `
                 SELECT
                     id, Name, Direccion_MP, Slogan_comercial, Descripcion,
-                    Record_Image, Latitud_MP, Longitud_MP
+                    Record_Image, Latitud_MP, Longitud_MP, Sucursal.Name
                 FROM Mega_Proyectos
                 WHERE Mega_proyecto_comercial = true
                 LIMIT ${offset}, 200
@@ -92,7 +92,7 @@ class ZohoToPostgresSync {
     }
   }
 
-  // --- Paso 3: Obtener Atributos  ---
+  // Paso 3: Obtener Atributos
   async getAttributesFromZoho(accessToken, parentId) {
     try {
       const response = await axios.get(
@@ -115,7 +115,7 @@ class ZohoToPostgresSync {
     }
   }
 
-  // --- Paso 4: Insertar/Actualizar Mega Proyecto  ---
+  // Paso 4: Insertar/Actualizar Mega Proyecto  
   async insertMegaProjectIntoPostgres(project, accessToken) {
     if (!project || !project.id) {
       console.log(
@@ -123,19 +123,17 @@ class ZohoToPostgresSync {
       );
       return;
     }
-
     const client = await this.pool.connect();
     try {
       const attributesData = await this.getAttributesFromZoho(
         accessToken,
         project.id
       );
-
       const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
                     id, name, address, slogan, description, "attributes",
-                    gallery, latitude, longitude, is_public
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    gallery, latitude, longitude, is_public, city
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (id) DO UPDATE SET 
                     name = EXCLUDED.name,
                     address = EXCLUDED.address,
@@ -145,10 +143,10 @@ class ZohoToPostgresSync {
                     gallery = EXCLUDED.gallery,
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
-                    is_public = EXCLUDED.is_public;
+                    is_public = EXCLUDED.is_public,
+                    city = EXCLUDED.city;
             `;
-
-      // Preparar los atributos como un string separado por comas
+      
       let attributesAsText = null;
       if (attributesData && attributesData.length > 0) {
         const attributeIds = attributesData
@@ -158,7 +156,13 @@ class ZohoToPostgresSync {
           attributesAsText = attributeIds.join(",");
         }
       }
-      
+      //Nuevo campo ciudad Mega_project [25/07/25]
+      const fullCityName = project["Sucursal.Name"];
+      let cityName = null;
+      if (fullCityName && typeof fullCityName === "string") {
+        cityName = fullCityName.split("/")[0].trim().toUpperCase();
+      }
+
       const values = [
         project.id,
         project.Name || "",
@@ -170,6 +174,7 @@ class ZohoToPostgresSync {
         parseFloat(project.Latitud_MP) || 0,
         parseFloat(project.Longitud_MP) || 0,
         true, // Se establece is_public a true por defecto
+        cityName, // Nuevo campo city [25/07/25]
       ];
 
       await client.query(insertQuery, values);
@@ -186,7 +191,7 @@ class ZohoToPostgresSync {
     }
   }
 
-  // --- Paso 5: Método principal ---
+  // Paso 5: Método principal sincronizacion
   async run() {
     try {
       console.log("🚀 Iniciando sincronización de Mega Proyectos...");
@@ -200,7 +205,7 @@ class ZohoToPostgresSync {
           offset
         );
         if (!projects || projects.length === 0) break;
-        
+
         const processingPromises = projects.map((project) =>
           this.insertMegaProjectIntoPostgres(project, token)
         );

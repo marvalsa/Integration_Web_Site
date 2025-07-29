@@ -33,3 +33,6 @@ Thumbs.db
 *.db
 #  Ignorar archivos de configuración de la aplicación
 logs_output/
+
+# Ignorar archivos de gcp - bucket
+gcp-credentials.json

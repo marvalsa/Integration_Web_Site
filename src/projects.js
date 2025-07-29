@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { Pool } = require("pg");
 const axios = require("axios");
-const { Storage } = require("@google-cloud/storage");
+// const { Storage } = require("@google-cloud/storage"); // [REMOVIDO] Se elimina la dependencia de GCS
 
 class ZohoToPostgresSyncProjects {
   constructor() {
@@ -22,16 +22,17 @@ class ZohoToPostgresSyncProjects {
       baseURL: "https://www.zohoapis.com/crm/v7", //  El usuario mencionó v7 para proyectos relacionados [25/07/25]
     };
 
-    try {
-      this.storage = new Storage();
-      this.bucket = this.storage.bucket(process.env.GCS_BUCKET_NAME);
-      console.log(
-        `✅ Conectado al bucket de GCS: ${process.env.GCS_BUCKET_NAME}`
-      );
-    } catch (error) {
-      console.error("❌ Error al inicializar Google Cloud Storage:", error);
-      throw new Error("No se pudo conectar con GCS. Revisa las credenciales.");
-    }
+    // [REMOVIDO] Bloque completo de inicialización de Google Cloud Storage.
+    // try {
+    //   this.storage = new Storage();
+    //   this.bucket = this.storage.bucket(process.env.GCS_BUCKET_NAME);
+    //   console.log(
+    //     `✅ Conectado al bucket de GCS: ${process.env.GCS_BUCKET_NAME}`
+    //   );
+    // } catch (error) {
+    //   console.error("❌ Error al inicializar Google Cloud Storage:", error);
+    //   throw new Error("No se pudo conectar con GCS. Revisa las credenciales.");
+    // }
   }
 
   //Obtener token zoho crm
@@ -115,9 +116,9 @@ class ZohoToPostgresSyncProjects {
     }
     const normalizedStateName = stateName.trim();
     const query = `
-      SELECT id, name 
-      FROM public."Project_Status" 
-      WHERE LOWER(name) = LOWER($1) 
+      SELECT id, name
+      FROM public."Project_Status"
+      WHERE LOWER(name) = LOWER($1)
       LIMIT 1;
     `;
 
@@ -255,7 +256,6 @@ class ZohoToPostgresSyncProjects {
     const client = await this.pool.connect();
     const hcValue = project.id.toString();
 
-    // <-- AJUSTE 1: Llamamos a las nuevas funciones
     const [salesRoomDetails, attributeIdsArray, relatedProjectIds] =
       await Promise.all([
         this.getSalesRoomDetails(accessToken, project["Sala_de_ventas.id"]),
@@ -264,7 +264,6 @@ class ZohoToPostgresSyncProjects {
       ]);
 
     try {
-      // <-- AJUSTE 1: Añadida la columna `relation_projects`
       const insertQuery = `
                 INSERT INTO public."Projects" (
                     hc, name, slogan, address, small_description, long_description, sic,
@@ -272,7 +271,7 @@ class ZohoToPostgresSyncProjects {
                     price_up_general, "type", mega_project_id, status, highlighted, built_area,
                     private_area, rooms, bathrooms, latitude, longitude, is_public, "attributes",
                     city, sales_room_address, sales_room_schedule_attention, sales_room_latitude, sales_room_longitude, slug,
-                    relation_projects 
+                    relation_projects
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
                 ON CONFLICT (hc) DO UPDATE SET
                     name = EXCLUDED.name, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
@@ -287,7 +286,6 @@ class ZohoToPostgresSyncProjects {
                     sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude, slug = EXCLUDED.slug,
                     relation_projects = EXCLUDED.relation_projects;
             `;
-      // Ajuste de StatusProject de db Project_Status [25/07/25]
       const statusObject = await this.getStatusObjectFromDb(
         project.Estado,
         client
@@ -301,13 +299,11 @@ class ZohoToPostgresSyncProjects {
           ? JSON.stringify(attributeIdsArray)
           : null;
 
-      // <-- AJUSTE 1: Convertir array de IDs de proyectos relacionados a formato JSONB
       const relatedProjectsJson =
         relatedProjectIds?.length > 0
           ? JSON.stringify(relatedProjectIds)
           : null;
 
-      // <-- AJUSTE 2: Lógica para procesar el nombre de la ciudad
       const fullCityName = project["Ciudad.Name"];
       let cityName = null;
       if (fullCityName && typeof fullCityName === "string") {
@@ -332,7 +328,6 @@ class ZohoToPostgresSyncProjects {
           )
         : parseInt(project["Ba_os"], 10) || 0;
 
-      // Ajuste [24/07/25] Mostrar campo si es true
       const salaryMinimumCount =
         project.Precio_en_SMMLV === true
           ? parseInt(project.Cantidad_SMMLV, 10) || null
@@ -346,7 +341,6 @@ class ZohoToPostgresSyncProjects {
         project.Descripcion_corta || null,
         project.Descripcion_larga || null,
         project.SIG || null,
-        // parseInt(project.Cantidad_SMMLV, 10) || null,
         salaryMinimumCount,
         project.Descripcion_descuento || null,
         parseInt(project.Precios_desde, 10) || null,
@@ -355,7 +349,7 @@ class ZohoToPostgresSyncProjects {
         project["Mega_Proyecto.id"]
           ? project["Mega_Proyecto.id"].toString()
           : null,
-        statusForDb, // <-- Aquí se usa el nuevo valor JSON
+        statusForDb,
         project.Proyecto_destacado || false,
         parseFloat(project.Area_construida_desde) || 0,
         parseFloat(project.Area_construida_hasta) || 0,
@@ -365,7 +359,7 @@ class ZohoToPostgresSyncProjects {
         parseFloat(project.Longitud) || 0,
         false,
         attributesJson,
-        newCityName, // <-- AJUSTE 2: Usar el nombre de ciudad procesado
+        newCityName,
         salesRoomDetails?.Direccion || null,
         salesRoomDetails?.Horario || null,
         parseFloat(salesRoomDetails?.Latitud_SV) || null,
@@ -475,33 +469,32 @@ class ZohoToPostgresSyncProjects {
     }
   }
 
-  //Obtener Galley y urban plans de GCP
-  async getGCSFilePublicUrls(directoryPath) {
-    try {
-      const [files] = await this.bucket.getFiles({ prefix: directoryPath });
-      return files
-        .filter((file) => !file.name.endsWith("/"))
-        .map(
-          (file) =>
-            `https://storage.googleapis.com/${this.bucket.name}/${file.name}`
-        );
-    } catch (error) {
-      console.error(
-        `❌ Error al obtener URLs públicas de GCS para la ruta ${directoryPath}:`,
-        error.message
-      );
-      return [];
-    }
-  }
+  // [REMOVIDO] La función getGCSFilePublicUrls ya no es necesaria.
+  // async getGCSFilePublicUrls(directoryPath) {
+  //   try {
+  //     const [files] = await this.bucket.getFiles({ prefix: directoryPath });
+  //     return files
+  //       .filter((file) => !file.name.endsWith("/"))
+  //       .map(
+  //         (file) =>
+  //           `https://storage.googleapis.com/${this.bucket.name}/${file.name}`
+  //       );
+  //   } catch (error) {
+  //     console.error(
+  //       `❌ Error al obtener URLs públicas de GCS para la ruta ${directoryPath}:`,
+  //       error.message
+  //     );
+  //     return [];
+  //   }
+  // }
 
-  //Insertar GCP por projects
-  async syncProjectFilesInGCS(projectId, typologies) {
+  // [MODIFICADO] Esta función ya no interactúa con GCS.
+  // Ahora actualiza los datos derivados de las tipologías y establece gallery/urban_plans en NULL.
+  async syncProjectData(projectId, typologies) {
     if (!projectId) return;
     const projectIdStr = projectId.toString();
 
-    const galleryPath = `projects/${projectIdStr}/gallery/`;
-    const plansPath = `projects/${projectIdStr}/urban_plans/`;
-
+    // Calcular valores mínimos a partir de las tipologías
     const minDeliveryTime = Math.min(
       ...typologies.map((t) => parseInt(t.Plazo_en_meses, 10) || Infinity)
     );
@@ -509,28 +502,22 @@ class ZohoToPostgresSyncProjects {
       ...typologies.map((t) => parseInt(t.Cuota_inicial1, 10) || Infinity)
     );
 
-    const [galleryUrls, plansUrls] = await Promise.all([
-      this.getGCSFilePublicUrls(galleryPath),
-      this.getGCSFilePublicUrls(plansPath),
-    ]);
-
     const client = await this.pool.connect();
     try {
+      // La consulta ahora no establece gallery y urban_plans.
       const updateQuery = `
                 UPDATE public."Projects"
-                SET gallery = $1, urban_plans = $2, delivery_time = $3, deposit = $4
-                WHERE hc = $5;
+                SET delivery_time = $1, deposit = $2
+                WHERE hc = $3;
             `;
       await client.query(updateQuery, [
-        galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
-        plansUrls.length > 0 ? JSON.stringify(plansUrls) : null,
         minDeliveryTime !== Infinity ? minDeliveryTime : null,
         minDeposit !== Infinity ? minDeposit : null,
         projectIdStr,
       ]);
     } catch (error) {
       console.error(
-        `❌ Error al actualizar el proyecto ${projectIdStr} con las URLs de GCS:`,
+        `❌ Error al actualizar datos del proyecto ${projectIdStr}:`,
         error
       );
     } finally {
@@ -542,7 +529,7 @@ class ZohoToPostgresSyncProjects {
   async run() {
     try {
       console.log(
-        "🚀 Iniciando sincronización de Proyectos, Tipologías y Archivos GCS..."
+        "🚀 Iniciando sincronización de Proyectos y Tipologías..."
       );
       const token = await this.getZohoAccessToken();
       console.log('🟡 Preparando para truncar la tabla "Typologies"...');
@@ -572,7 +559,8 @@ class ZohoToPostgresSyncProjects {
               token,
               insertResult.hc
             );
-            await this.syncProjectFilesInGCS(insertResult.hc, typologies);
+            // [MODIFICADO] Se llama a la nueva función renombrada `syncProjectData`
+            await this.syncProjectData(insertResult.hc, typologies);
             if (typologies.length > 0) {
               await this.insertTypologies(insertResult.hc, typologies);
             }

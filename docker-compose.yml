@@ -15,9 +15,7 @@ services:
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_PORT=${PG_PORT}
-      - PG_SSL=${PG_SSL}
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS} 
+      - PG_SSL=${PG_SSL}      
     volumes:
       - ./:/app
     ports:

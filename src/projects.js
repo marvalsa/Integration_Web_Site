@@ -313,7 +313,7 @@ class ZohoToPostgresSyncProjects {
       if (fullCityName && typeof fullCityName === "string") {
         cityName = fullCityName.split("/")[0].trim().toUpperCase();
       }
-
+      const newCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
       const roomsValue = Array.isArray(project.Habitaciones)
         ? Math.max(
             0,
@@ -363,9 +363,9 @@ class ZohoToPostgresSyncProjects {
         bathroomsValue,
         parseFloat(project.Latitud) || 0,
         parseFloat(project.Longitud) || 0,
-        true,
+        false,
         attributesJson,
-        cityName, // <-- AJUSTE 2: Usar el nombre de ciudad procesado
+        newCityName, // <-- AJUSTE 2: Usar el nombre de ciudad procesado
         salesRoomDetails?.Direccion || null,
         salesRoomDetails?.Horario || null,
         parseFloat(salesRoomDetails?.Latitud_SV) || null,

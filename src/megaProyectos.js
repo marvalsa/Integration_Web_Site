@@ -162,7 +162,7 @@ class ZohoToPostgresSync {
       if (fullCityName && typeof fullCityName === "string") {
         cityName = fullCityName.split("/")[0].trim().toUpperCase();
       }
-
+      const newCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
       const values = [
         project.id,
         project.Name || "",
@@ -173,8 +173,8 @@ class ZohoToPostgresSync {
         project.Record_Image || null, // Galería como "url1,url2,url3"
         parseFloat(project.Latitud_MP) || 0,
         parseFloat(project.Longitud_MP) || 0,
-        true, // Se establece is_public a true por defecto
-        cityName, // Nuevo campo city [25/07/25]
+        false, // Se establece is_public a true por defecto
+        newCityName, // Nuevo campo city [25/07/25]
       ];
 
       await client.query(insertQuery, values);

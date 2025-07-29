@@ -11,7 +11,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("Conexion exitosa Microservicio API GCP!");
+  res.send("Conexion exitosa Microservicio API OCI!");
 });
 
 app.post("/", async (req, res) => {

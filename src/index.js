@@ -1,5 +1,5 @@
 const express = require("express");
-
+const package = require("../package.json");
 // --- Importaciones de los módulos de sincronización ---
 const MegaSync = require("./megaProyectos");
 const AttributeSync = require("./projectAttributes");
@@ -11,7 +11,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("Conexion exitosa Microservicio API OCI!");
+  res.json({
+    name: package.name,
+    version: package.version    
+  })
 });
 
 app.post("/", async (req, res) => {

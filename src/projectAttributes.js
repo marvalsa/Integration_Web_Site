@@ -22,7 +22,7 @@ class ProjectAttributesSync {
     };
   }
 
-  // --- Paso 1: Obtener Token
+  // --- Paso 1: Obtener Token ---
   async getZohoAccessToken() {
     try {
       const response = await axios.post(
@@ -50,7 +50,7 @@ class ProjectAttributesSync {
     }
   }
 
-  // --- Paso 2: Obtener Atributos de Zoho
+  // --- Paso 2: Obtener Atributos de Zoho ---
   async getZohoAttributes(accessToken) {
     let allAttributes = [];
     let hasMoreRecords = true;
@@ -61,7 +61,7 @@ class ProjectAttributesSync {
 
     while (hasMoreRecords) {
       const query = {
-        select_query: `select id, Nombre_atributo, Icon_cdn_google from Parametros where Tipo = 'Atributo' limit ${
+        select_query: `select id, Nombre_atributo, Icon_cdn_google FROM Parametros WHERE (((Tipo = 'Atributo') and Nombre_atributo is not null) and Icon_cdn_google is not null) limit ${
           (page - 1) * limit
         }, ${limit}`,
       };
@@ -103,7 +103,7 @@ class ProjectAttributesSync {
     return allAttributes;
   }
 
-  // --- Paso 3: Insertar Atributos en PostgreSQL (MODIFICADO) ---
+  // --- Paso 3: Insertar Atributos en PostgreSQL ---
   async insertAttributesIntoPostgres(attributes) {
     if (!attributes || attributes.length === 0) {
       console.log("ℹ️ No hay atributos para insertar en PostgreSQL.");
@@ -118,21 +118,17 @@ class ProjectAttributesSync {
         `ℹ️ Iniciando procesamiento de ${attributes.length} atributos en PostgreSQL...`
       );
       for (const attr of attributes) {
-        if (!attr.id || !attr.Nombre_atributo) {
+        // Validación más estricta para cumplir con NOT NULL de la DB.
+        if (!attr.id || !attr.Nombre_atributo || !attr.Icon_cdn_google) {
           console.warn(
-            `⚠️ Atributo inválido (falta id o Nombre_atributo): ${JSON.stringify(
+            `⚠️ Atributo inválido (falta id, nombre o icono): ${JSON.stringify(
               attr
             )}. Omitiendo.`
           );
           errorCount++;
           continue;
         }
-
-        // === AJUSTE PRINCIPAL: Se inserta el texto directamente ===
-        const attributeName = attr.Nombre_atributo;
-
-        // Como la tabla se trunca antes, una simple inserción es suficiente.
-        // Usamos UPSERT (ON CONFLICT) por si se decidiera quitar el TRUNCATE en el futuro.
+        
         const upsertQuery = `
                     INSERT INTO public."Project_Attributes" (id, "name", icon)
                     VALUES ($1, $2, $3)
@@ -141,14 +137,16 @@ class ProjectAttributesSync {
                         icon = EXCLUDED.icon;
                 `;
 
-        const icon = attr.Icon_cdn_google
-          ? attr.Icon_cdn_google.toLowerCase()
-          : null;
-        const res = await client.query(upsertQuery, [
+        // Se asegura de que icon nunca sea null, usando un string vacío como default.
+        const iconValue = attr.Icon_cdn_google ? attr.Icon_cdn_google.toLowerCase() : '';
+
+        const values = [
           attr.id.toString(),
-          attributeName,
-          icon,
-        ]);
+          attr.Nombre_atributo,
+          iconValue,
+        ];
+        
+        const res = await client.query(upsertQuery, values);
 
         if (res.rowCount > 0) {
           processedCount++;
@@ -171,7 +169,6 @@ class ProjectAttributesSync {
     try {
       console.log("🚀 Iniciando sincronización de Atributos de Proyecto...");
 
-      // La estrategia de truncar la tabla asegura una sincronización limpia y completa.
       console.log(
         '🟡 Preparando para truncar la tabla "Project_Attributes"...'
       );
@@ -187,17 +184,20 @@ class ProjectAttributesSync {
 
       const token = await this.getZohoAccessToken();
       const attributes = await this.getZohoAttributes(token);
-      const result = await this.insertAttributesIntoPostgres(attributes);
+      
+      if (attributes.length > 0) {
+        const result = await this.insertAttributesIntoPostgres(attributes);
+        console.log(`✅ Sincronización de Atributos finalizada. ${result.processedCount} atributos procesados.`);
+      } else {
+        console.log("✅ Sincronización de Atributos finalizada. No se encontraron atributos para procesar.");
+      }
 
-      console.log(
-        `✅ Sincronización de Atributos finalizada. ${result.processedCount} atributos procesados.`
-      );
     } catch (error) {
       console.error(
         "🚨 ERROR CRÍTICO durante la sincronización de Atributos.",
         error
       );
-      throw error; // Lanzar el error para que el proceso principal lo capture.
+      throw error;
     } finally {
       if (this.pool) {
         await this.pool.end();

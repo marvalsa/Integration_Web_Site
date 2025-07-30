@@ -52,13 +52,14 @@ class ZohoToPostgresSync {
 
   // Obtener Datos de Mega Proyectos
   async getZohoProjectData(accessToken, offset = 0) {
+    
     const query = {
       select_query: `
                 SELECT
                     id, Name, Direccion_MP, Slogan_comercial, Descripcion,
-                    Record_Image, Latitud_MP, Longitud_MP, Sucursal.Name
+                    Record_Image, Latitud_MP, Longitud_MP
                 FROM Mega_Proyectos
-                WHERE Mega_proyecto_comercial = true
+                WHERE (((((((Mega_proyecto_comercial = true) and Name is not null) and Direccion_MP is not null) and Slogan_comercial is not null) and Descripcion is not null ) and Latitud_MP is not null) and Longitud_MP is not null)
                 LIMIT ${offset}, 200
             `,
     };
@@ -92,7 +93,7 @@ class ZohoToPostgresSync {
     }
   }
 
-  // Paso 3: Obtener Atributos
+  // Obtener Atributos
   async getAttributesFromZoho(accessToken, parentId) {
     try {
       const response = await axios.get(
@@ -102,8 +103,9 @@ class ZohoToPostgresSync {
           validateStatus: (status) => [200, 204].includes(status),
         }
       );
+      // === CORREGIDO === Devolvemos un array vacío si no hay datos para consistencia.
       if (response.status === 204 || !response.data?.data) {
-        return null;
+        return [];
       }
       return response.data.data;
     } catch (error) {
@@ -115,7 +117,9 @@ class ZohoToPostgresSync {
     }
   }
 
-  // Paso 4: Insertar/Actualizar Mega Proyecto  
+  // =========================================================================
+  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS ==
+  // =========================================================================
   async insertMegaProjectIntoPostgres(project, accessToken) {
     if (!project || !project.id) {
       console.log(
@@ -125,56 +129,60 @@ class ZohoToPostgresSync {
     }
     const client = await this.pool.connect();
     try {
-      const attributesData = await this.getAttributesFromZoho(
-        accessToken,
-        project.id
-      );
+      // === CONSULTA SQL COMPLETA ===
       const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
-                    id, name, address, slogan, description, "attributes",
-                    gallery, latitude, longitude, is_public, city
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    id, slug, "name", address, slogan, description, seo_title,
+                    seo_meta_description, "attributes", gallery, latitude, longitude, is_public
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 ON CONFLICT (id) DO UPDATE SET 
-                    name = EXCLUDED.name,
+                    slug = EXCLUDED.slug,
+                    "name" = EXCLUDED.name,
                     address = EXCLUDED.address,
                     slogan = EXCLUDED.slogan,
                     description = EXCLUDED.description,
+                    seo_title = EXCLUDED.seo_title,
+                    seo_meta_description = EXCLUDED.seo_meta_description,
                     "attributes" = EXCLUDED."attributes",
                     gallery = EXCLUDED.gallery,
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
-                    is_public = EXCLUDED.is_public,
-                    city = EXCLUDED.city;
+                    is_public = EXCLUDED.is_public;
             `;
+
+      // --- Preparación de datos ---
+      const attributesData = await this.getAttributesFromZoho(accessToken, project.id);
       
-      let attributesAsText = null;
-      if (attributesData && attributesData.length > 0) {
-        const attributeIds = attributesData
-          .map((attr) => attr.Atributo?.id)
-          .filter(Boolean);
-        if (attributeIds.length > 0) {
-          attributesAsText = attributeIds.join(",");
-        }
-      }
-      //Nuevo campo ciudad Mega_project [25/07/25]
-      const fullCityName = project["Sucursal.Name"];
-      let cityName = null;
-      if (fullCityName && typeof fullCityName === "string") {
-        cityName = fullCityName.split("/")[0].trim().toUpperCase();
-      }
-      const newCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+      const attributeIds = attributesData
+        .map((attr) => attr.Atributo?.id)
+        .filter(Boolean);
+
+      
+      // Crea un slug a partir del nombre y le añade el ID para garantizar que sea único.      
+      // const slug = `${nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${project.id}`;
+      const nameForSlug = project.Name || 'sin-nombre';
+      const slug = nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      
+      // Manejo correcto de JSONB para la galería.
+      const galleryJson = project.Record_Image 
+        ? JSON.stringify([project.Record_Image]) // Si hay imagen, la pone en un array JSON
+        : '[]'; // Si no, un array JSON vacío.
+
+      // === ARRAY DE VALORES COMPLETO ===
       const values = [
-        project.id,
-        project.Name || "",
-        project.Direccion_MP || null,
-        project.Slogan_comercial || null,
-        project.Descripcion || null,
-        attributesAsText, // Atributos como "id1,id2,id3"
-        project.Record_Image || null, // Galería como "url1,url2,url3"
-        parseFloat(project.Latitud_MP) || 0,
-        parseFloat(project.Longitud_MP) || 0,
-        false, // Se establece is_public a true por defecto
-        newCityName, // Nuevo campo city [25/07/25]
+        /* $1  id */ project.id,
+        /* $2  slug */ slug,
+        /* $3  name */ project.Name || '',
+        /* $4  address */ project.Direccion_MP || '',
+        /* $5  slogan */ project.Slogan_comercial || '',
+        /* $6  description */ project.Descripcion || '',
+        /* $7  seo_title */ null, // Columna nueva, valor por defecto
+        /* $8  seo_meta_description */ null, // Columna nueva, valor por defecto
+        /* $9  attributes */ JSON.stringify(attributeIds), // JSONB
+        /* $10 gallery */ galleryJson, // JSONB
+        /* $11 latitude */ (parseFloat(project.Latitud_MP) || 0).toString(), // TEXT
+        /* $12 longitude */ (parseFloat(project.Longitud_MP) || 0).toString(), // TEXT
+        /* $13 is_public */ false, // Booleano por defecto
       ];
 
       await client.query(insertQuery, values);
@@ -191,7 +199,7 @@ class ZohoToPostgresSync {
     }
   }
 
-  // Paso 5: Método principal sincronizacion
+  // Método principal de sincronización
   async run() {
     try {
       console.log("🚀 Iniciando sincronización de Mega Proyectos...");
@@ -206,6 +214,7 @@ class ZohoToPostgresSync {
         );
         if (!projects || projects.length === 0) break;
 
+        // Procesa los proyectos en paralelo para mayor eficiencia
         const processingPromises = projects.map((project) =>
           this.insertMegaProjectIntoPostgres(project, token)
         );
@@ -230,5 +239,6 @@ class ZohoToPostgresSync {
     }
   }
 }
+
 
 module.exports = ZohoToPostgresSync;

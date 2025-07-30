@@ -9,14 +9,7 @@ const ProjectStatesSync = require("./projectStatus");
 
 const app = express();
 const port = process.env.PORT || 3000;
-console.log(
-  {
-      clientId: process.env.ZOHO_CLIENT_ID,
-      clientSecret: process.env.ZOHO_CLIENT_SECRET,
-      refreshToken: process.env.ZOHO_REFRESH_TOKEN,
-      baseURL: "https://www.zohoapis.com/crm/v7", 
-  }
-)
+
 app.get("/", (req, res) => {
   res.send("Conexion exitosa Microservicio API OCI!");
 });

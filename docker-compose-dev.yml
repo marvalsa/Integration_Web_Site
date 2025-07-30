@@ -1,0 +1,23 @@
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+version: '3.8'
+
+services:
+  # Servicio para ejecutar el script de sincronización Node.js
+  integration_server:
+    build: .
+    container_name: integration_server
+    environment:      
+      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
+      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+      - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
+      - PG_HOST=${PG_HOST}
+      - PG_DATABASE=${PG_DATABASE}
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_PORT=${PG_PORT}
+      - PG_SSL=${PG_SSL}  
+    ports:
+      - "3000:3000"
+    
+
+

@@ -1,18 +1,14 @@
+// src/projectStatus.js
 require("dotenv").config();
-const { Pool } = require("pg");
 const axios = require("axios");
+const { crearReporteDeTarea } = require('./reportBuilder'); // <<< 1. IMPORTAR
 
 class ProjectStatesSync {
-  constructor() {
-    this.pool = new Pool({
-      host: process.env.PG_HOST,
-      database: process.env.PG_DATABASE,
-      user: process.env.PG_USER,
-      password: process.env.PG_PASSWORD,
-      port: process.env.PG_PORT || 5432,
-      ssl:
-        process.env.PG_SSL === "true" ? { rejectUnauthorized: false } : false,
-    });
+  constructor(dbPool) {
+    if (!dbPool) {
+      throw new Error("Se requiere una instancia del pool de PostgreSQL para ProjectStatesSync.");
+    }
+    this.pool = dbPool;
 
     this.zohoConfig = {
       clientId: process.env.ZOHO_CLIENT_ID,
@@ -107,93 +103,84 @@ class ProjectStatesSync {
     return allStates;
   }
 
-  // --- Paso 3: Truncar e Insertar Estados en PostgreSQL (MODIFICADO) ---
-  async syncStatesWithPostgres(stateNames) {
+  // <<< 2. AJUSTAMOS `syncStatesWithPostgres` PARA QUE ACTUALICE EL REPORTE
+  async syncStatesWithPostgres(stateNames, reporte) {
     if (!stateNames || stateNames.length === 0) {
-      console.log("ℹ️ No hay estados para procesar desde Zoho.");
-      return { processedCount: 0 };
-    }
+      return;
+    } 
 
-    // Obtener una lista de nombres de estado únicos
     const uniqueStateNames = [...new Set(stateNames)];
-    console.log(`ℹ️ Se encontraron ${uniqueStateNames.length} estados únicos.`);
-
+    reporte.metricas.procesados = uniqueStateNames.length;
+    
     const client = await this.pool.connect();
-    let processedCount = 0;
-
+    
     try {
       await client.query("BEGIN");
-
-      console.log('ℹ️ Limpiando la tabla "Project_Status" (TRUNCATE)...');
-      await client.query(
-        'TRUNCATE TABLE public."Project_Status" RESTART IDENTITY CASCADE;'
-      );
-      console.log('✅ Tabla "Project_Status" limpiada.');
-
-      // ID inicial como BigInt para mantener la consistencia
-      let currentId = 1000000000000000001n;
+      await client.query('TRUNCATE TABLE public."Project_Status" RESTART IDENTITY CASCADE;');
+      
+      let currentId = 1000000000000000001n; // Mantenemos tu excelente lógica de ID personalizado.
 
       for (const stateName of uniqueStateNames) {
-        console.log(`- Procesando estado: "${stateName}"`);
-
-        const insertQuery = `
-                    INSERT INTO public."Project_Status" (id, name)
-                    VALUES ($1, $2);
-                `;
-
-        // === AJUSTE PRINCIPAL: Se inserta el texto directamente, sin JSON.stringify ===
-        await client.query(insertQuery, [currentId.toString(), stateName]);
-
-        console.log(`  ✅ Insertado con ID ${currentId} -> "${stateName}"`);
-        processedCount++;
-        currentId++; // Incrementar el ID para el siguiente estado
+        try {
+            const insertQuery = `INSERT INTO public."Project_Status" (id, name) VALUES ($1, $2);`;
+            await client.query(insertQuery, [currentId.toString(), stateName]);
+            reporte.metricas.exitosos++; // Contamos como exitoso
+            currentId++;
+        } catch(dbError) {
+            reporte.metricas.fallidos++; // Contamos como fallido
+            reporte.erroresDetallados.push({
+                referencia: `Estado: '${stateName}'`,
+                motivo: `Error en Base de Datos: ${dbError.message}`
+            });
+        }
       }
-
       await client.query("COMMIT");
+      console.log('✅ Transacción de estados completada con COMMIT.');
 
-      console.log(
-        `✅ Sincronización completada. ${processedCount} estados únicos insertados.`
-      );
-      return { processedCount };
-    } catch (error) {
+    } catch (transactionError) {
       await client.query("ROLLBACK");
-      console.error(
-        `❌ Error durante la sincronización con PostgreSQL. La transacción ha sido revertida.`,
-        error
-      );
-      throw error;
+      console.error(`❌ Error en transacción de estados. ROLLBACK ejecutado.`, transactionError);
+      // Este es un error crítico que afecta a toda la operación, lo relanzamos para que lo capture el 'run'
+      throw transactionError; 
     } finally {
       client.release();
     }
   }
 
-  // --- Método principal que orquesta todo el proceso ---
+  // <<< 3. `run()` USA EL NUEVO CONSTRUCTOR Y ORQUESTA LA LÓGICA
   async run() {
+    // Creamos el reporte desde el constructor centralizado
+    const reporte = crearReporteDeTarea("Sincronización de Estados de Proyecto");
+
     try {
-      console.log("🚀 Iniciando sincronización de Estados de Proyecto...");
+      console.log(`🚀 Iniciando tarea: ${reporte.tarea}...`);
 
       const token = await this.getZohoAccessToken();
       const statesFromZoho = await this.getZohoProjectStates(token);
-      const result = await this.syncStatesWithPostgres(statesFromZoho);
+      
+      // Llenamos la métrica inicial
+      reporte.metricas.obtenidos = statesFromZoho.length;
+      
+      // Pasamos el reporte a la función de sincronización para que lo llene
+      await this.syncStatesWithPostgres(statesFromZoho, reporte);
+      
+      // Determinamos el estado final basado en las métricas
+      reporte.estado = (reporte.metricas.fallidos > 0) 
+        ? 'finalizado_con_errores' 
+        : 'exitoso';
+      
+      console.log(`✅ Tarea '${reporte.tarea}' finalizada con estado: ${reporte.estado}`);
 
-      console.log(
-        `✅ Sincronización de Estados de Proyecto finalizada. ${result.processedCount} estados procesados.`
-      );
     } catch (error) {
-      console.error(
-        "🚨 ERROR CRÍTICO durante la sincronización de Estados de Proyecto. El proceso se detendrá.",
-        error.message
-      );
-      throw error;
-    } finally {
-      if (this.pool) {
-        console.log(
-          "🔌 Cerrando pool de conexiones PostgreSQL para Estados de Proyecto..."
-        );
-        await this.pool.end();
-        console.log("🔌 Pool de conexiones PostgreSQL cerrado.");
-      }
+      console.error(`🚨 ERROR CRÍTICO en '${reporte.tarea}'.`, error);
+      reporte.estado = 'error_critico';
+      reporte.erroresDetallados.push({ 
+        motivo: 'Error general en la ejecución de la tarea', 
+        detalle: error.message 
+      });
     }
+
+    return reporte; // Devolvemos el reporte estandarizado
   }
 }
 

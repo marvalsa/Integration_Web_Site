@@ -1,18 +1,16 @@
+// src/projectAttributes.js
 require("dotenv").config();
-const { Pool } = require("pg");
 const axios = require("axios");
+const { crearReporteDeTarea } = require('./reportBuilder'); // <<< 1. IMPORTAR
 
 class ProjectAttributesSync {
-  constructor() {
-    this.pool = new Pool({
-      host: process.env.PG_HOST,
-      database: process.env.PG_DATABASE,
-      user: process.env.PG_USER,
-      password: process.env.PG_PASSWORD,
-      port: process.env.PG_PORT || 5432,
-      ssl:
-        process.env.PG_SSL === "true" ? { rejectUnauthorized: false } : false,
-    });
+  constructor(dbPool) {
+    if (!dbPool) {
+      throw new Error(
+        "Se requiere una instancia del pool de PostgreSQL para ProjectAttributesSync."
+      );
+    }
+    this.pool = dbPool;
 
     this.zohoConfig = {
       clientId: process.env.ZOHO_CLIENT_ID,
@@ -21,6 +19,7 @@ class ProjectAttributesSync {
       baseURL: "https://www.zohoapis.com/crm/v2",
     };
   }
+
 
   // --- Paso 1: Obtener Token ---
   async getZohoAccessToken() {
@@ -102,108 +101,99 @@ class ProjectAttributesSync {
     );
     return allAttributes;
   }
-
-  // --- Paso 3: Insertar Atributos en PostgreSQL ---
-  async insertAttributesIntoPostgres(attributes) {
+  
+  // <<< 2. AJUSTAMOS `insertAttributesIntoPostgres` PARA QUE ACTUALICE EL REPORTE
+  async insertAttributesIntoPostgres(attributes, reporte) {
     if (!attributes || attributes.length === 0) {
-      console.log("ℹ️ No hay atributos para insertar en PostgreSQL.");
-      return { processedCount: 0, errorCount: 0 };
+      return; // No hay nada que hacer
     }
-    const client = await this.pool.connect();
-    let processedCount = 0;
-    let errorCount = 0;
 
+    const client = await this.pool.connect();
     try {
-      console.log(
-        `ℹ️ Iniciando procesamiento de ${attributes.length} atributos en PostgreSQL...`
-      );
       for (const attr of attributes) {
-        // Validación más estricta para cumplir con NOT NULL de la DB.
         if (!attr.id || !attr.Nombre_atributo || !attr.Icon_cdn_google) {
-          console.warn(
-            `⚠️ Atributo inválido (falta id, nombre o icono): ${JSON.stringify(
-              attr
-            )}. Omitiendo.`
-          );
-          errorCount++;
+          reporte.metricas.fallidos++;
+          reporte.erroresDetallados.push({
+              referencia: JSON.stringify(attr),
+              motivo: `Atributo inválido omitido (falta id, nombre o icono).`
+          });
           continue;
         }
-        
-        const upsertQuery = `
-                    INSERT INTO public."Project_Attributes" (id, "name", icon)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        icon = EXCLUDED.icon;
-                `;
 
-        // Se asegura de que icon nunca sea null, usando un string vacío como default.
-        const iconValue = attr.Icon_cdn_google ? attr.Icon_cdn_google.toLowerCase() : '';
+        try {
+          const upsertQuery = `
+              INSERT INTO public."Project_Attributes" (id, "name", icon)
+              VALUES ($1, $2, $3)
+              ON CONFLICT (id) DO UPDATE SET
+                  name = EXCLUDED.name,
+                  icon = EXCLUDED.icon;
+            `;
+          const iconValue = attr.Icon_cdn_google ? attr.Icon_cdn_google.toLowerCase() : "";
+          const values = [attr.id.toString(), attr.Nombre_atributo, iconValue];
+          const res = await client.query(upsertQuery, values);
 
-        const values = [
-          attr.id.toString(),
-          attr.Nombre_atributo,
-          iconValue,
-        ];
-        
-        const res = await client.query(upsertQuery, values);
-
-        if (res.rowCount > 0) {
-          processedCount++;
+          if (res.rowCount > 0) {
+            reporte.metricas.exitosos++;
+          }
+        } catch (dbError) {
+          reporte.metricas.fallidos++;
+          reporte.erroresDetallados.push({
+              referencia: `Atributo ID: ${attr.id}`,
+              nombre: attr.Nombre_atributo,
+              motivo: `Error en Base de Datos: ${dbError.message}`
+          });
         }
       }
-      console.log(
-        `✅ Procesamiento de atributos completado. ${processedCount} insertados/actualizados, ${errorCount} omitidos.`
-      );
-      return { processedCount, errorCount };
-    } catch (error) {
-      console.error(`❌ Error al procesar atributo en PostgreSQL:`, error);
-      throw error;
     } finally {
       client.release();
     }
   }
 
-  // --- Método principal para ejecutar la sincronización ---
+  // <<< 3. `run()` USA EL NUEVO CONSTRUCTOR Y ORQUESTA LA LÓGICA
   async run() {
-    try {
-      console.log("🚀 Iniciando sincronización de Atributos de Proyecto...");
+    // Creamos el reporte desde el constructor centralizado
+    const reporte = crearReporteDeTarea("Sincronización de Atributos de Proyecto");
+    const client = await this.pool.connect();
 
-      console.log(
-        '🟡 Preparando para truncar la tabla "Project_Attributes"...'
-      );
-      const client = await this.pool.connect();
-      try {
-        await client.query(
-          'TRUNCATE TABLE public."Project_Attributes" RESTART IDENTITY CASCADE;'
-        );
-        console.log('✅ Tabla "Project_Attributes" truncada con éxito.');
-      } finally {
-        client.release();
-      }
+    try {
+      console.log(`🚀 Iniciando tarea: ${reporte.tarea}...`);
+      
+      // La operación de truncado es parte de la tarea.
+      console.log('ℹ️ Truncando la tabla "Project_Attributes"...');
+      await client.query('TRUNCATE TABLE public."Project_Attributes" RESTART IDENTITY CASCADE;');
+      console.log('✅ Tabla "Project_Attributes" truncada con éxito.');
 
       const token = await this.getZohoAccessToken();
       const attributes = await this.getZohoAttributes(token);
       
+      // Llenamos las métricas del reporte
+      reporte.metricas.obtenidos = attributes.length;
+      reporte.metricas.procesados = attributes.length;
+
       if (attributes.length > 0) {
-        const result = await this.insertAttributesIntoPostgres(attributes);
-        console.log(`✅ Sincronización de Atributos finalizada. ${result.processedCount} atributos procesados.`);
-      } else {
-        console.log("✅ Sincronización de Atributos finalizada. No se encontraron atributos para procesar.");
+        // Pasamos el reporte a la función de inserción para que lo llene
+        await this.insertAttributesIntoPostgres(attributes, reporte);
       }
 
+      // Determinamos el estado final basado en las métricas
+      reporte.estado = (reporte.metricas.fallidos > 0) 
+        ? 'finalizado_con_errores' 
+        : 'exitoso';
+      
+      console.log(`✅ Tarea '${reporte.tarea}' finalizada con estado: ${reporte.estado}`);
+
     } catch (error) {
-      console.error(
-        "🚨 ERROR CRÍTICO durante la sincronización de Atributos.",
-        error
-      );
-      throw error;
+      console.error(`🚨 ERROR CRÍTICO en '${reporte.tarea}'.`, error);
+      reporte.estado = 'error_critico';
+      reporte.erroresDetallados.push({ 
+        motivo: 'Error general en la ejecución de la tarea', 
+        detalle: error.message 
+      });
     } finally {
-      if (this.pool) {
-        await this.pool.end();
-        console.log("🔌 Pool de conexiones para Atributos cerrado.");
-      }
+        client.release(); // Nos aseguramos de liberar el cliente del pool
     }
+    
+    return reporte; // Devolvemos el reporte estandarizado
   }
 }
 

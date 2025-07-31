@@ -1,18 +1,16 @@
+// src/megaProyectos.js
 require("dotenv").config();
-const { Pool } = require("pg");
 const axios = require("axios");
+const { crearReporteDeTarea } = require('./reportBuilder'); // <<< 1. IMPORTAR NUESTRO CONSTRUCTOR
 
-class ZohoToPostgresSync {
-  constructor() {
-    this.pool = new Pool({
-      host: process.env.PG_HOST,
-      database: process.env.PG_DATABASE,
-      user: process.env.PG_USER,
-      password: process.env.PG_PASSWORD,
-      port: process.env.PG_PORT || 5432,
-      ssl:
-        process.env.PG_SSL === "true" ? { rejectUnauthorized: false } : false,
-    });
+class MegaProjectsSync {
+  constructor(dbPool) {
+    if (!dbPool) {
+      throw new Error(
+        "Se requiere una instancia del pool de PostgreSQL para MegaProjectsSync."
+      );
+    }
+    this.pool = dbPool;
 
     this.zohoConfig = {
       clientId: process.env.ZOHO_CLIENT_ID,
@@ -21,7 +19,6 @@ class ZohoToPostgresSync {
       baseURL: "https://www.zohoapis.com/crm/v2",
     };
   }
-
   // Obtener Token zoho
   async getZohoAccessToken() {
     try {
@@ -52,7 +49,6 @@ class ZohoToPostgresSync {
 
   // Obtener Datos de Mega Proyectos
   async getZohoProjectData(accessToken, offset = 0) {
-    
     const query = {
       select_query: `
                 SELECT
@@ -117,128 +113,115 @@ class ZohoToPostgresSync {
     }
   }
 
-  // =========================================================================
-  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS ==
-  // =========================================================================
-  async insertMegaProjectIntoPostgres(project, accessToken) {
+  // <<< 2. AJUSTAMOS `insertMegaProjectIntoPostgres` PARA QUE ACTUALICE EL REPORTE
+  async insertMegaProjectIntoPostgres(project, accessToken, reporte) {
     if (!project || !project.id) {
-      console.log(
-        "⚠️ Se intentó insertar un Mega Proyecto inválido o sin ID. Omitiendo."
-      );
-      return;
+      reporte.metricas.fallidos++;
+      reporte.erroresDetallados.push({
+          referencia: 'Proyecto sin ID',
+          motivo: 'Se intentó procesar un Mega Proyecto inválido o sin ID.'
+      });
+      return; // Salimos de la función
     }
+
     const client = await this.pool.connect();
     try {
-      // === CONSULTA SQL COMPLETA ===
       const insertQuery = `
-                INSERT INTO public."Mega_Projects" (
-                    id, slug, "name", address, slogan, description, seo_title,
-                    seo_meta_description, "attributes", gallery, latitude, longitude, is_public
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                ON CONFLICT (id) DO UPDATE SET 
-                    slug = EXCLUDED.slug,
-                    "name" = EXCLUDED.name,
-                    address = EXCLUDED.address,
-                    slogan = EXCLUDED.slogan,
-                    description = EXCLUDED.description,
-                    seo_title = EXCLUDED.seo_title,
-                    seo_meta_description = EXCLUDED.seo_meta_description,
-                    "attributes" = EXCLUDED."attributes",
-                    gallery = EXCLUDED.gallery,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    is_public = EXCLUDED.is_public;
-            `;
+        INSERT INTO public."Mega_Projects" (
+            id, slug, "name", address, slogan, description, seo_title,
+            seo_meta_description, "attributes", gallery, latitude, longitude, is_public
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE SET 
+            slug = EXCLUDED.slug, "name" = EXCLUDED.name, address = EXCLUDED.address,
+            slogan = EXCLUDED.slogan, description = EXCLUDED.description,
+            seo_title = EXCLUDED.seo_title, seo_meta_description = EXCLUDED.seo_meta_description,
+            "attributes" = EXCLUDED.attributes, gallery = EXCLUDED.gallery,
+            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
+            is_public = EXCLUDED.is_public;
+      `;
 
-      // --- Preparación de datos ---
+      // La lógica para obtener atributos y preparar datos permanece igual
       const attributesData = await this.getAttributesFromZoho(accessToken, project.id);
-      
-      const attributeIds = attributesData
-        .map((attr) => attr.Atributo?.id)
-        .filter(Boolean);
+      const attributeIds = attributesData.map((attr) => attr.Atributo?.id).filter(Boolean);
+      const nameForSlug = project.Name || "sin-nombre";
+      const slug = nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      const galleryJson = project.Record_Image ? JSON.stringify([project.Record_Image]) : "[]";
 
-      
-      // Crea un slug a partir del nombre y le añade el ID para garantizar que sea único.      
-      // const slug = `${nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${project.id}`;
-      const nameForSlug = project.Name || 'sin-nombre';
-      const slug = nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      
-      // Manejo correcto de JSONB para la galería.
-      const galleryJson = project.Record_Image 
-        ? JSON.stringify([project.Record_Image]) // Si hay imagen, la pone en un array JSON
-        : '[]'; // Si no, un array JSON vacío.
-
-      // === ARRAY DE VALORES COMPLETO ===
       const values = [
-        /* $1  id */ project.id,
-        /* $2  slug */ slug,
-        /* $3  name */ project.Name || '',
-        /* $4  address */ project.Direccion_MP || '',
-        /* $5  slogan */ project.Slogan_comercial || '',
-        /* $6  description */ project.Descripcion || '',
-        /* $7  seo_title */ null, // Columna nueva, valor por defecto
-        /* $8  seo_meta_description */ null, // Columna nueva, valor por defecto
-        /* $9  attributes */ JSON.stringify(attributeIds), // JSONB
-        /* $10 gallery */ galleryJson, // JSONB
-        /* $11 latitude */ (parseFloat(project.Latitud_MP) || 0).toString(), // TEXT
-        /* $12 longitude */ (parseFloat(project.Longitud_MP) || 0).toString(), // TEXT
-        /* $13 is_public */ false, // Booleano por defecto
+        project.id, slug, project.Name || "", project.Direccion_MP || "",
+        project.Slogan_comercial || "", project.Descripcion || "", null, null,
+        JSON.stringify(attributeIds), galleryJson,
+        (parseFloat(project.Latitud_MP) || 0).toString(),
+        (parseFloat(project.Longitud_MP) || 0).toString(),
+        false,
       ];
 
       await client.query(insertQuery, values);
-      console.log(
-        `✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`
-      );
+      
+      // Si la query tiene éxito, contamos como exitoso
+      reporte.metricas.exitosos++;
+
     } catch (error) {
-      console.error(
-        `❌ Error procesando Mega Proyecto ID ${project?.id} (${project?.Name}):`,
-        error.message
-      );
+      // Si la query falla, contamos como fallido y guardamos el error
+      reporte.metricas.fallidos++;
+      reporte.erroresDetallados.push({
+          referencia: `Mega Proyecto ID: ${project.id}`,
+          nombre: project.Name || 'N/A',
+          motivo: `Error en Base de Datos: ${error.message}`
+      });
     } finally {
       client.release();
     }
   }
 
-  // Método principal de sincronización
+  // <<< 3. `run()` USA EL NUEVO CONSTRUCTOR Y ORQUESTA LA LÓGICA
   async run() {
+    // Creamos el reporte desde el constructor centralizado
+    const reporte = crearReporteDeTarea("Sincronización de Mega Proyectos");
+
     try {
-      console.log("🚀 Iniciando sincronización de Mega Proyectos...");
+      console.log(`🚀 Iniciando tarea: ${reporte.tarea}...`);
       const token = await this.getZohoAccessToken();
 
       let offset = 0;
       let more = true;
       while (more) {
-        const { data: projects, more: hasMore } = await this.getZohoProjectData(
-          token,
-          offset
-        );
+        const { data: projects, more: hasMore } = await this.getZohoProjectData(token, offset);
         if (!projects || projects.length === 0) break;
 
-        // Procesa los proyectos en paralelo para mayor eficiencia
+        // Actualizamos las métricas del reporte
+        reporte.metricas.obtenidos += projects.length;
+        reporte.metricas.procesados += projects.length; // En este caso, procesamos todos los que obtenemos
+
+        // Creamos un array de promesas, pasando el reporte a cada llamada
         const processingPromises = projects.map((project) =>
-          this.insertMegaProjectIntoPostgres(project, token)
+          this.insertMegaProjectIntoPostgres(project, token, reporte)
         );
+        // Esperamos a que todas las inserciones/actualizaciones terminen
         await Promise.all(processingPromises);
 
         more = hasMore;
         offset += 200;
       }
-      console.log(`✅ Sincronización de Mega Proyectos finalizada.`);
+
+      // Determinamos el estado final basado en las métricas
+      reporte.estado = (reporte.metricas.fallidos > 0) 
+        ? 'finalizado_con_errores' 
+        : 'exitoso';
+      
+      console.log(`✅ Tarea '${reporte.tarea}' finalizada con estado: ${reporte.estado}`);
+
     } catch (error) {
-      console.error(
-        "🚨 ERROR CRÍTICO durante la sincronización de Mega Proyectos. El proceso se detuvo.",
-        error
-      );
-    } finally {
-      if (this.pool) {
-        await this.pool.end();
-        console.log(
-          "🔌 Pool de conexiones PostgreSQL para Mega Proyectos cerrado."
-        );
-      }
+      console.error(`🚨 ERROR CRÍTICO en '${reporte.tarea}'.`, error);
+      reporte.estado = 'error_critico';
+      reporte.erroresDetallados.push({
+        motivo: 'Error general en la ejecución de la tarea',
+        detalle: error.message
+      });
     }
+    
+    return reporte; // Devolvemos el reporte estandarizado
   }
 }
 
-
-module.exports = ZohoToPostgresSync;
+module.exports = MegaProjectsSync;

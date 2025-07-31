@@ -473,7 +473,7 @@ class ZohoToPostgresSyncProjects {
           /* $12 min_deposit */ parseInt(t.Cuota_inicial1, 10) || 0,
           /* $13 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
           /* $14 available_count */ availableUnits,
-          /* $15 gallery */ "[]", // Asume que el campo se llama Gallery en Zoho
+          /* $15 gallery */ [], // Asume que el campo se llama Gallery en Zoho
           /* $16 plans */ "", // Asume que el campo se llama Plans en Zoho
         ];
 

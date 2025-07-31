@@ -102,7 +102,7 @@ class ProjectAttributesSync {
     return allAttributes;
   }
   
-  // <<< 2. AJUSTAMOS `insertAttributesIntoPostgres` PARA QUE ACTUALICE EL REPORTE
+  // <<< 2. AJUSTA `insertAttributesIntoPostgres` PARA QUE ACTUALICE EL REPORTE
   async insertAttributesIntoPostgres(attributes, reporte) {
     if (!attributes || attributes.length === 0) {
       return; // No hay nada que hacer

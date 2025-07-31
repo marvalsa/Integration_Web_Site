@@ -19,6 +19,7 @@ class MegaProjectsSync {
       baseURL: "https://www.zohoapis.com/crm/v2",
     };
   }
+
   // Obtener Token zoho
   async getZohoAccessToken() {
     try {
@@ -113,7 +114,7 @@ class MegaProjectsSync {
     }
   }
 
-  // <<< 2. AJUSTAMOS `insertMegaProjectIntoPostgres` PARA QUE ACTUALICE EL REPORTE
+  // <<< 2. AJUSTA `insertMegaProjectIntoPostgres` PARA QUE ACTUALICE EL REPORTE
   async insertMegaProjectIntoPostgres(project, accessToken, reporte) {
     if (!project || !project.id) {
       reporte.metricas.fallidos++;

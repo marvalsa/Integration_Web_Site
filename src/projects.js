@@ -55,9 +55,9 @@ class ZohoToPostgresSyncProjects {
     const coqlQueryObject = {
       select_query: `
                 SELECT id, Name, Slogan, Direccion, Descripcion_corta, Descripcion_larga, SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento, Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id, Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta, Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug, Precio_en_SMMLV FROM Proyectos_Comerciales 
-                WHERE (((((((((((((((((((((((id is not null) and Name is not null) and Slogan is not null) and Direccion is not null) and Descripcion_corta is not null) 
-                  and Sala_de_ventas.Name is not null) and Cantidad_SMMLV is not null) and Descripcion_descuento is not null) and Precios_desde is not null) and Precios_hasta is not null) 
-                  and Tipo_de_proyecto is not null) and Mega_Proyecto.id is not null) and Estado is not null) and Proyecto_destacado is not null) and Area_construida_desde is not null) 
+                WHERE (((((((((((((((((((((id is not null) and Name is not null) and Slogan is not null) and Direccion is not null) and Descripcion_corta is not null) 
+                  and Sala_de_ventas.Name is not null) and Cantidad_SMMLV is not null) and Precios_desde is not null) and Precios_hasta is not null) 
+                  and Tipo_de_proyecto is not null) and Estado is not null) and Proyecto_destacado is not null) and Area_construida_desde is not null) 
                   and Area_construida_hasta is not null) and Habitaciones is not null) and Ba_os is not null) and Latitud is not null) and Longitud is not null) and Sala_de_ventas.id is not null) 
                   and Slug is not null) and Precio_en_SMMLV is not null)
                 LIMIT ${offset}, 200
@@ -273,17 +273,7 @@ class ZohoToPostgresSyncProjects {
             salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description, bonus_ref = EXCLUDED.bonus_ref,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
-            "attributes" = EXCLUDED.attributes,
-            gallery = CASE 
-                        WHEN public."Projects".gallery IS NOT NULL AND jsonb_array_length(public."Projects".gallery) > 0 
-                        THEN public."Projects".gallery 
-                        ELSE EXCLUDED.gallery 
-                      END,
-            urban_plans = CASE 
-                            WHEN public."Projects".urban_plans IS NOT NULL AND jsonb_array_length(public."Projects".urban_plans) > 0
-                            THEN public."Projects".urban_plans 
-                            ELSE EXCLUDED.urban_plans
-                          END,
+            "attributes" = EXCLUDED.attributes, gallery = EXCLUDED.gallery, urban_plans = EXCLUDED.urban_plans,
             work_progress_images = EXCLUDED.work_progress_images, tour_360 = EXCLUDED.tour_360,
             "type" = EXCLUDED.type, status = EXCLUDED.status, highlighted = EXCLUDED.highlighted,
             built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,

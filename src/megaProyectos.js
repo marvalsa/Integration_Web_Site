@@ -137,9 +137,13 @@ class MegaProjectsSync {
             slogan = EXCLUDED.slogan, description = EXCLUDED.description,
             seo_title = EXCLUDED.seo_title, seo_meta_description = EXCLUDED.seo_meta_description,
             "attributes" = EXCLUDED.attributes, gallery = EXCLUDED.gallery,
-            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-            is_public = EXCLUDED.is_public;
-      `;
+            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,            
+            is_public = CASE                
+                WHEN public."Mega_Projects".is_public IS NOT NULL                
+                THEN public."Mega_Projects".is_public                
+                ELSE EXCLUDED.is_public
+            END;
+      `;     
 
       // La lógica para obtener atributos y preparar datos permanece igual
       const attributesData = await this.getAttributesFromZoho(accessToken, project.id);

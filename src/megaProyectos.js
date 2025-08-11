@@ -147,7 +147,11 @@ class ZohoToPostgresSync {
                     gallery = EXCLUDED.gallery,
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
-                    is_public = EXCLUDED.is_public;
+                    is_public = CASE 
+                        WHEN public."Mega_Projects".is_public IS NOT NULL 
+                        THEN public."Mega_Projects".is_public 
+                        ELSE EXCLUDED.is_public
+                    END;
             `;
 
       // --- Preparación de datos ---

@@ -161,7 +161,11 @@
                           VALUES ($1, $2, $3)
                           ON CONFLICT (id) DO UPDATE SET
                               "name" = EXCLUDED."name",
-                              is_public = EXCLUDED.is_public;                           
+                              is_public = CASE 
+                                  WHEN public."Cities".is_public IS NOT NULL 
+                                  THEN public."Cities".is_public 
+                                  ELSE EXCLUDED.is_public
+                              END;                           
                       `;
 
             const res = await client.query(upsertQuery, [cityId, newCityName, false]);

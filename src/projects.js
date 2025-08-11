@@ -250,7 +250,8 @@ class ZohoToPostgresSyncProjects {
           this.getRelatedProjectIds(accessToken, hcValue),
         ]);
 
-      // === CONSULTA SQL COMPLETA ===   
+      // === CONSULTA SQL COMPLETA === 
+      // Ajuste de validacion de Img de gallery y urban_plans [04/08/25]  
       const insertQuery = `
         INSERT INTO public."Projects" (
             hc, "name", slug, slogan, address, city, small_description, long_description,
@@ -258,11 +259,10 @@ class ZohoToPostgresSyncProjects {
             sales_room_latitude, sales_room_longitude, salary_minimum_count, delivery_time, deposit,
             discount_description, bonus_ref, price_from_general, price_up_general, "attributes",
             gallery, urban_plans, work_progress_images, tour_360, "type", status, highlighted,
-            built_area, private_area, rooms, bathrooms, relation_projects, latitude, longitude,
-            is_public, mega_project_id
+            built_area, private_area, rooms, bathrooms, relation_projects, latitude, longitude, mega_project_id
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39
+            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
         )
         ON CONFLICT (hc) DO UPDATE SET
             "name" = EXCLUDED.name, slug = EXCLUDED.slug, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
@@ -273,12 +273,22 @@ class ZohoToPostgresSyncProjects {
             salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description, bonus_ref = EXCLUDED.bonus_ref,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
-            "attributes" = EXCLUDED.attributes, gallery = EXCLUDED.gallery, urban_plans = EXCLUDED.urban_plans,
+            "attributes" = EXCLUDED.attributes,
+            gallery = CASE 
+                        WHEN public."Projects".gallery IS NOT NULL AND jsonb_array_length(public."Projects".gallery) > 0 
+                        THEN public."Projects".gallery 
+                        ELSE EXCLUDED.gallery 
+                      END,
+            urban_plans = CASE 
+                            WHEN public."Projects".urban_plans IS NOT NULL AND jsonb_array_length(public."Projects".urban_plans) > 0
+                            THEN public."Projects".urban_plans 
+                            ELSE EXCLUDED.urban_plans
+                          END,
             work_progress_images = EXCLUDED.work_progress_images, tour_360 = EXCLUDED.tour_360,
             "type" = EXCLUDED.type, status = EXCLUDED.status, highlighted = EXCLUDED.highlighted,
             built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,
             bathrooms = EXCLUDED.bathrooms, relation_projects = EXCLUDED.relation_projects,
-            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, is_public = EXCLUDED.is_public,
+            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
             mega_project_id = EXCLUDED.mega_project_id;
       `;
       // --- Preparación de datos ---
@@ -346,7 +356,7 @@ class ZohoToPostgresSyncProjects {
         /* $35 relation_projects */ relatedProjectsJson,
         /* $36 latitude */ (parseFloat(project.Latitud) || '0').toString(),
         /* $37 longitude */ (parseFloat(project.Longitud) || '0').toString(),
-        /* $38 is_public */ false, // Valor por defecto
+        // /* $38 is_public */ false, // Valor por defecto
         /* $39 mega_project_id */ project["Mega_Proyecto.id"] ? project["Mega_Proyecto.id"].toString() : null
       ];
 

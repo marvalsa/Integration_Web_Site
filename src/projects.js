@@ -259,10 +259,10 @@ class ZohoToPostgresSyncProjects {
             sales_room_latitude, sales_room_longitude, salary_minimum_count, delivery_time, deposit,
             discount_description, bonus_ref, price_from_general, price_up_general, "attributes",
             gallery, urban_plans, work_progress_images, tour_360, "type", status, highlighted,
-            built_area, private_area, rooms, bathrooms, relation_projects, latitude, longitude, mega_project_id
+            built_area, private_area, rooms, bathrooms, relation_projects, latitude, longitude, mega_project_id, is_public
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
+            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39
         )
         ON CONFLICT (hc) DO UPDATE SET
             "name" = EXCLUDED.name, slug = EXCLUDED.slug, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
@@ -289,7 +289,12 @@ class ZohoToPostgresSyncProjects {
             built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,
             bathrooms = EXCLUDED.bathrooms, relation_projects = EXCLUDED.relation_projects,
             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-            mega_project_id = EXCLUDED.mega_project_id;
+            mega_project_id = EXCLUDED.mega_project_id, 
+            is_public = CASE 
+                WHEN public."Projects".is_public IS NOT NULL 
+                THEN public."Projects".is_public 
+                ELSE EXCLUDED.is_public
+            END;
       `;
       // --- Preparación de datos ---
       const statusObject = await this.getStatusObjectFromDb(project.Estado, client);
@@ -354,10 +359,10 @@ class ZohoToPostgresSyncProjects {
         /* $33 rooms */ roomsValue,
         /* $34 bathrooms */ bathroomsValue,
         /* $35 relation_projects */ relatedProjectsJson,
-        /* $36 latitude */ (parseFloat(project.Latitud) || '0').toString(),
-        /* $37 longitude */ (parseFloat(project.Longitud) || '0').toString(),
-        // /* $38 is_public */ false, // Valor por defecto
-        /* $39 mega_project_id */ project["Mega_Proyecto.id"] ? project["Mega_Proyecto.id"].toString() : null
+        /* $36 latitude */ (parseFloat(project.Latitud) || '0').toString(), 
+        /* $37 longitude */ (parseFloat(project.Longitud) || '0').toString(),        
+        /* $38 mega_project_id */ project["Mega_Proyecto.id"] ? project["Mega_Proyecto.id"].toString() : null,        
+        /* $39 is_public */ false, // Valor por defecto
       ];
 
       await client.query(insertQuery, values);

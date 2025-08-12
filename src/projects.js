@@ -38,12 +38,12 @@ class ZohoToPostgresSyncProjects {
         }
       );
       const token = response.data.access_token;
-      if (!token) throw new Error("Access token no recibido");
-      console.log("✅ Token obtenido para la sincronización completa");
+      if (!token) throw new Error("Token de acceso no recibido");
+      console.log("✅ Token de acceso obtenido para la sincronización.");
       return token;
     } catch (error) {
       console.error(
-        "❌ Error al obtener token de Zoho:",
+        "❌ Error al obtener el token de acceso de Zoho:",
         error.response?.data || error.message
       );
       throw error;
@@ -51,7 +51,7 @@ class ZohoToPostgresSyncProjects {
   }
 
   //Obtener Proyectos Comerciales de CRM
-  async getZohoProjects(accessToken, offset = 0) {    
+  async getZohoProjects(accessToken, offset = 0) {
     const coqlQueryObject = {
       select_query: `
                 SELECT id, Name, Slogan, Direccion, Descripcion_corta, Descripcion_larga, SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento, Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id, Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta, Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug, Precio_en_SMMLV FROM Proyectos_Comerciales 
@@ -77,7 +77,7 @@ class ZohoToPostgresSyncProjects {
       const info = response.data.info;
       const data = response.data.data || [];
       console.log(
-        `✅ Recuperados ${data.length} proyectos de Zoho (offset ${offset})`
+        `✅ Obtenidos ${data.length} proyectos de Zoho (página con offset ${offset})`
       );
       return {
         data,
@@ -86,7 +86,7 @@ class ZohoToPostgresSyncProjects {
       };
     } catch (error) {
       console.error(
-        "❌ Error al ejecutar COQL para Proyectos:",
+        "❌ Error al ejecutar la consulta COQL para Proyectos:",
         error.response?.data || error.message
       );
       throw error;
@@ -116,7 +116,7 @@ class ZohoToPostgresSyncProjects {
         };
       } else {
         console.warn(
-          `⚠️ Estado no encontrado en la DB: "${stateName}". Se guardará como nulo.`
+          `⚠️ Estado no encontrado en la Base de Datos: "${stateName}". Se guardará como nulo.`
         );
         return null;
       }
@@ -191,7 +191,7 @@ class ZohoToPostgresSyncProjects {
         .filter(Boolean);
     } catch (error) {
       console.error(
-        `❌ Error al obtener atributos:`,
+        `❌ Error al obtener atributos para el proyecto ${parentId}:`,
         error.response?.data || error.message
       );
       throw error;
@@ -221,7 +221,7 @@ class ZohoToPostgresSyncProjects {
       return null;
     } catch (error) {
       console.error(
-        `❌ Error al obtener detalles de la Sala de Ventas ID ${salesRoomId}:`,
+        `❌ Error al obtener detalles de la Sala de Ventas con ID ${salesRoomId}:`,
         error.response?.data || error.message
       );
       return null;
@@ -233,9 +233,7 @@ class ZohoToPostgresSyncProjects {
   // =========================================================================
   async insertProjectIntoPostgres(project, accessToken) {
     if (!project?.id) {
-      console.warn(
-        "⚠️ Se intentó insertar un proyecto inválido o sin ID. Omitiendo."
-      );
+      console.warn("⚠️ Se omitió un proyecto porque no tenía ID.");
       return { success: false, hc: null, errorType: "invalid_data" };
     }
 
@@ -250,8 +248,6 @@ class ZohoToPostgresSyncProjects {
           this.getRelatedProjectIds(accessToken, hcValue),
         ]);
 
-      // === CONSULTA SQL COMPLETA === 
-      // Ajuste de validacion de Img de gallery y urban_plans [04/08/25]  
       const insertQuery = `
         INSERT INTO public."Projects" (
             hc, "name", slug, slogan, address, city, small_description, long_description,
@@ -270,7 +266,7 @@ class ZohoToPostgresSyncProjects {
             seo_title = EXCLUDED.seo_title, seo_meta_description = EXCLUDED.seo_meta_description, sic = EXCLUDED.sic,
             sales_room_address = EXCLUDED.sales_room_address, sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
             sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude,
-            salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
+            salary_minimum_count = EXcluded.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description, bonus_ref = EXCLUDED.bonus_ref,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
@@ -296,81 +292,109 @@ class ZohoToPostgresSyncProjects {
                 ELSE EXCLUDED.is_public
             END;
       `;
-      // --- Preparación de datos ---
-      const statusObject = await this.getStatusObjectFromDb(project.Estado, client);
-      const statusForDb = statusObject ? JSON.stringify([statusObject.id]) : '[]';
+      const statusObject = await this.getStatusObjectFromDb(
+        project.Estado,
+        client
+      );
+      const statusForDb = statusObject
+        ? JSON.stringify([statusObject.id])
+        : "[]";
       const attributesJson = JSON.stringify(attributeIdsArray);
       const relatedProjectsJson = JSON.stringify(relatedProjectIds);
-      
+
       const fullCityName = project["Ciudad.Name"];
-      let cityName = '';
+      let cityName = "";
       if (fullCityName && typeof fullCityName === "string") {
         const cityNameParts = fullCityName.split("/");
         if (cityNameParts.length > 0) {
           const firstPart = cityNameParts[0].trim();
-          cityName = firstPart.charAt(0).toUpperCase() + firstPart.slice(1).toLowerCase();
+          cityName =
+            firstPart.charAt(0).toUpperCase() +
+            firstPart.slice(1).toLowerCase();
         }
       }
 
       const roomsValue = Array.isArray(project.Habitaciones)
-        ? Math.max(0, ...project.Habitaciones.map((n) => parseInt(n, 10)).filter(Number.isFinite))
+        ? Math.max(
+            0,
+            ...project.Habitaciones.map((n) => parseInt(n, 10)).filter(
+              Number.isFinite
+            )
+          )
         : parseInt(project.Habitaciones, 10) || 0;
-
       const bathroomsValue = Array.isArray(project["Ba_os"])
-        ? Math.max(0, ...project["Ba_os"].map((n) => parseInt(n, 10)).filter(Number.isFinite))
+        ? Math.max(
+            0,
+            ...project["Ba_os"]
+              .map((n) => parseInt(n, 10))
+              .filter(Number.isFinite)
+          )
         : parseInt(project["Ba_os"], 10) || 0;
+      const salaryMinimumCount =
+        project.Precio_en_SMMLV === true
+          ? parseInt(project.Cantidad_SMMLV, 10) || 0
+          : 0;
 
-      const salaryMinimumCount = project.Precio_en_SMMLV === true ? parseInt(project.Cantidad_SMMLV, 10) || 0 : 0;
-
-      // === ARRAY DE VALORES COMPLETO ===
       const values = [
-        /* $1  hc */ hcValue,
-        /* $2  name */ project.Name || '',
-        /* $3  slug */ project.Slug || '',
-        /* $4  slogan */ project.Slogan || '',
-        /* $5  address */ project.Direccion || '',
-        /* $6  city */ cityName,
-        /* $7  small_description */ project.Descripcion_corta || '',
-        /* $8  long_description */ project.Descripcion_larga || '',
-        /* $9  seo_title */ project.SEO_Title || null, // <-- Asegúrate de que este campo exista en Zoho
-        /* $10 seo_meta_description */ project.SEO_Meta_Description || null, // <-- Asegúrate de que este campo exista en Zoho
-        /* $11 sic */ project.SIG || '',
-        /* $12 sales_room_address */ salesRoomDetails?.Direccion || '',
-        /* $13 sales_room_schedule_attention */ salesRoomDetails?.Horario || '',
-        /* $14 sales_room_latitude */ (salesRoomDetails?.Latitud_SV || '0').toString(),
-        /* $15 sales_room_longitude */ (salesRoomDetails?.Longitud_SV || '0').toString(),
-        /* $16 salary_minimum_count */ salaryMinimumCount,
-        /* $17 delivery_time */ 0, // Se calcula después
-        /* $18 deposit */ 0, // Se calcula después
-        /* $19 discount_description */ project.Descripcion_descuento || null,
-        /* $20 bonus_ref */ project.Bonus_Ref || null, // <-- Asegúrate de que este campo exista en Zoho
-        /* $21 price_from_general */ parseInt(project.Precios_desde, 10) || 0,
-        /* $22 price_up_general */ parseInt(project.Precios_hasta, 10) || 0,
-        /* $23 attributes */ attributesJson,
-        /* $24 gallery */ '[]', // JSONB vacío
-        /* $25 urban_plans */ '[]', // JSONB vacío
-        /* $26 work_progress_images */ '[]', // JSONB vacío
-        /* $27 tour_360 */ project.Tour_360 || null, // <-- Asegúrate de que este campo exista en Zoho
-        /* $28 type */ project.Tipo_de_proyecto || '',
-        /* $29 status */ statusForDb,
-        /* $30 highlighted */ project.Proyecto_destacado || false,
-        /* $31 built_area */ parseFloat(project.Area_construida_desde) || 0,
-        /* $32 private_area */ parseFloat(project.Area_construida_hasta) || 0, // Asumo que es hasta, si no, usa el mismo valor que built_area
-        /* $33 rooms */ roomsValue,
-        /* $34 bathrooms */ bathroomsValue,
-        /* $35 relation_projects */ relatedProjectsJson,
-        /* $36 latitude */ (parseFloat(project.Latitud) || '0').toString(), 
-        /* $37 longitude */ (parseFloat(project.Longitud) || '0').toString(),        
-        /* $38 mega_project_id */ project["Mega_Proyecto.id"] ? project["Mega_Proyecto.id"].toString() : null,        
-        /* $39 is_public */ false, // Valor por defecto
+        hcValue,
+        project.Name || "",
+        project.Slug || "",
+        project.Slogan || "",
+        project.Direccion || "",
+        cityName,
+        project.Descripcion_corta || "",
+        project.Descripcion_larga || "",
+        project.SEO_Title || null,
+        project.SEO_Meta_Description || null,
+        project.SIG || "",
+        salesRoomDetails?.Direccion || "",
+        salesRoomDetails?.Horario || "",
+        (salesRoomDetails?.Latitud_SV || "0").toString(),
+        (salesRoomDetails?.Longitud_SV || "0").toString(),
+        salaryMinimumCount,
+        0,
+        0,
+        project.Descripcion_descuento || null,
+        project.Bonus_Ref || null,
+        parseInt(project.Precios_desde, 10) || 0,
+        parseInt(project.Precios_hasta, 10) || 0,
+        attributesJson,
+        "[]",
+        "[]",
+        "[]",
+        project.Tour_360 || null,
+        project.Tipo_de_proyecto || "",
+        statusForDb,
+        project.Proyecto_destacado || false,
+        parseFloat(project.Area_construida_desde) || 0,
+        parseFloat(project.Area_construida_hasta) || 0,
+        roomsValue,
+        bathroomsValue,
+        relatedProjectsJson,
+        (parseFloat(project.Latitud) || "0").toString(),
+        (parseFloat(project.Longitud) || "0").toString(),
+        project["Mega_Proyecto.id"]
+          ? project["Mega_Proyecto.id"].toString()
+          : null,
+        false,
       ];
 
       await client.query(insertQuery, values);
-      console.log(`✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`);
+      console.log(
+        `✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`
+      );
       return { success: true, hc: hcValue };
     } catch (error) {
-      console.error(`❌ Error procesando proyecto HC ${hcValue} (${project?.Name}):`, error.message);
-      return { success: false, hc: hcValue, errorType: "db_error", message: error.message };
+      console.error(
+        `❌ Error procesando el proyecto HC ${hcValue} (${project?.Name}):`,
+        error.message
+      );
+      return {
+        success: false,
+        hc: hcValue,
+        errorType: "db_error",
+        message: error.message,
+      };
     } finally {
       client.release();
     }
@@ -388,67 +412,155 @@ class ZohoToPostgresSyncProjects {
       );
       return response.data?.data || [];
     } catch (error) {
-      console.error(`❌ Error al obtener tipologías del proyecto ${parentId}:`, error.response?.data || error.message);
+      console.error(
+        `❌ Error al obtener las tipologías del proyecto ${parentId}:`,
+        error.response?.data || error.message
+      );
       throw error;
     }
   }
 
   // =========================================================================
-  // == FUNCIÓN DE TIPOLOGÍAS ==
+  // == FUNCIÓN DE SINCRONIZACIÓN MANUAL ==
   // =========================================================================
-  async insertTypologies(projectHc, typologies) {
-    if (!typologies || typologies.length === 0) return;
-
+  async syncTypologies(projectHc, typologiesFromZoho) {
     const client = await this.pool.connect();
+
     try {
-      for (const t of typologies) {
-        if (!t.id) continue;
+      await client.query("BEGIN");
+
+      // 1. Obtener datos de ambas fuentes y normalizar los nombres con .trim()
+      const dbResult = await client.query(
+        'SELECT id, "name", gallery FROM public."Typologies" WHERE project_id = $1',
+        [projectHc]
+      );
+
+      // ***** CAMBIO 1: Aplicar .trim() al crear el Map de la DB *****
+      const dbTypologiesMap = new Map(
+        dbResult.rows.map((t) => [
+          t.name.trim(), // Normalizamos el nombre de la DB
+          { id: t.id, gallery: t.gallery },
+        ])
+      );
+
+      // ***** CAMBIO 2: Aplicar .trim() al crear el Map de Zoho *****
+      const zohoTypologiesMap = new Map(
+        typologiesFromZoho.map((t) => [
+          t.Nombre.trim(), // Normalizamos el nombre de Zoho
+          t,
+        ])
+      );
+
+      // 2. Eliminar tipologías obsoletas
+      const namesToDelete = [...dbTypologiesMap.keys()].filter(
+        (dbName) => !zohoTypologiesMap.has(dbName)
+      );
+      if (namesToDelete.length > 0) {
+        console.log(
+          `🗑️  Proyecto ${projectHc}: Se eliminarán ${
+            namesToDelete.length
+          } tipologías obsoletas: ${namesToDelete.join(", ")}`
+        );
+        await client.query(
+          'DELETE FROM public."Typologies" WHERE project_id = $1 AND name = ANY($2::text[])',
+          [projectHc, namesToDelete]
+        );
+      }
+
+      // 3. Iterar sobre las tipologías de Zoho para decidir si insertar o actualizar
+      for (const t of typologiesFromZoho) {
+        if (!t.id || !t.Nombre) continue;
+
+        const trimmedName = t.Nombre.trim(); // Usamos el nombre "limpio" para la lógica
+        if (!trimmedName) continue; // Si el nombre queda vacío después del trim, lo ignoramos
+
         const availableUnits = parseInt(t.Und_Disponibles, 10);
         if (isNaN(availableUnits) || availableUnits < 1) {
-          console.log(`ℹ️ Omitiendo tipología "${t.Nombre || t.id}" para proyecto ${projectHc} por no tener unidades disponibles.`);
+          console.log(
+            `ℹ️ Omitiendo tipología "${trimmedName}" (proyecto ${projectHc}) por no tener unidades disponibles.`
+          );
           continue;
         }
 
-        // === CONSULTA SQL COMPLETA ===
-        const query = `
-                    INSERT INTO public."Typologies" (
-                        id, project_id, "name", description, price_from, price_up, rooms, bathrooms,
-                        built_area, private_area, min_separation, min_deposit, delivery_time,
-                        available_count, gallery, "plans"
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-                    ON CONFLICT (id) DO UPDATE SET
-                        project_id = EXCLUDED.project_id, "name" = EXCLUDED.name, description = EXCLUDED.description,
-                        price_from = EXCLUDED.price_from, price_up = EXCLUDED.price_up, rooms = EXCLUDED.rooms, 
-                        bathrooms = EXCLUDED.bathrooms, built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area,
-                        min_separation = EXCLUDED.min_separation, min_deposit = EXCLUDED.min_deposit,
-                        delivery_time = EXCLUDED.delivery_time, available_count = EXCLUDED.available_count,
-                        gallery = EXCLUDED.gallery, "plans" = EXCLUDED.plans;
-                `;
+        const existingTypology = dbTypologiesMap.get(trimmedName); // Buscamos por el nombre "limpio"
+        // Valida si existen las typologies en DB - CMR
+        if (existingTypology) {
+          // --- ACTUALIZAR ---
+          let galleryValueToUpdate = "[]";
+          if (
+            Array.isArray(existingTypology.gallery) &&
+            existingTypology.gallery.length > 0
+          ) {
+            galleryValueToUpdate = JSON.stringify(existingTypology.gallery);
+          }
 
-        // === ARRAY DE VALORES COMPLETO ===
-        const values = [
-            /* $1 id */ t.id.toString(),
-            /* $2 project_id */ projectHc.toString(),
-            /* $3 name */ t.Nombre || "",
-            /* $4 description */ t.Descripci_n || "",
-            /* $5 price_from */ parseInt(t.Precio_desde, 10) || 0,
-            /* $6 price_up */ 0, //Precio_hasta
-            /* $7 rooms */ parseInt(t.Habitaciones, 10) || 0,
-            /* $8 bathrooms */ parseInt(t.Ba_os, 10) || 0,
-            /* $9 built_area */ parseFloat(t.Area_construida) || 0,
-            /* $10 private_area */ parseFloat(t.Area_privada) || 0,
-            /* $11 min_separation */ parseInt(t.Separacion, 10) || 0,
-            /* $12 min_deposit */ parseInt(t.Cuota_inicial1, 10) || 0,
-            /* $13 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
-            /* $14 available_count */ availableUnits,
-            /* $15 gallery */ '[]', // Asume que el campo se llama Gallery en Zoho
-            /* $16 plans */'' // Asume que el campo se llama Plans en Zoho
-        ];
+          const updateQuery = `
+              UPDATE public."Typologies" SET
+                id = $1, description = $2, price_from = $3, price_up = $4, rooms = $5, bathrooms = $6,
+                built_area = $7, private_area = $8, min_separation = $9, min_deposit = $10,
+                delivery_time = $11, available_count = $12, "plans" = $13,
+                gallery = $14 
+              WHERE project_id = $15 AND "name" = $16;
+            `;
 
-        await client.query(query, values);
+          await client.query(updateQuery, [
+            t.id.toString(),
+            t.Descripci_n || "",
+            parseInt(t.Precio_desde, 10) || 0,
+            0,
+            parseInt(t.Habitaciones, 10) || 0,
+            parseInt(t.Ba_os, 10) || 0,
+            parseFloat(t.Area_construida) || 0,
+            parseFloat(t.Area_privada) || 0,
+            parseInt(t.Separacion, 10) || 0,
+            parseInt(t.Cuota_inicial1, 10) || 0,
+            parseInt(t.Plazo_en_meses, 10) || 0,
+            availableUnits,
+            "",
+            galleryValueToUpdate, // $14
+            projectHc, // $15
+            trimmedName, // $16: Usamos el nombre limpio para encontrar la fila
+          ]);
+        } else {
+          // --- INSERTAR ---
+          const insertQuery = `
+              INSERT INTO public."Typologies" (
+                id, project_id, "name", description, price_from, price_up, rooms, bathrooms,
+                built_area, private_area, min_separation, min_deposit, delivery_time,
+                available_count, gallery, "plans"
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+            `;
+          await client.query(insertQuery, [
+            t.id.toString(),
+            projectHc,
+            trimmedName, // Guardamos el nombre limpio en la DB
+            t.Descripci_n || "",
+            parseInt(t.Precio_desde, 10) || 0,
+            0,
+            parseInt(t.Habitaciones, 10) || 0,
+            parseInt(t.Ba_os, 10) || 0,
+            parseFloat(t.Area_construida) || 0,
+            parseFloat(t.Area_privada) || 0,
+            parseInt(t.Separacion, 10) || 0,
+            parseInt(t.Cuota_inicial1, 10) || 0,
+            parseInt(t.Plazo_en_meses, 10) || 0,
+            availableUnits,
+            "[]",
+            "",
+          ]);
+        }
       }
+
+      await client.query("COMMIT");
+      console.log(
+        `✅ Tipologías del proyecto ${projectHc} sincronizadas correctamente (Insertar/Actualizar/Eliminar).`
+      );
     } catch (error) {
-      console.error(`❌ Error insertando tipologías para proyecto ${projectHc}:`, error.message);
+      await client.query("ROLLBACK");
+      console.error(
+        `❌ Error fatal sincronizando tipologías para el proyecto ${projectHc}. La transacción fue revertida.`,
+        error
+      );
     } finally {
       client.release();
     }
@@ -456,27 +568,53 @@ class ZohoToPostgresSyncProjects {
 
   //Actualiza datos del proyecto basados en sus tipologías
   async syncProjectData(projectId, typologies) {
-    if (!projectId || typologies.length === 0) return; // No hacer nada si no hay tipologías
-    const projectIdStr = projectId.toString();
+    const availableTypologies = typologies.filter(
+      (t) => (parseInt(t.Und_Disponibles, 10) || 0) > 0
+    );
 
-    // Calcular valores mínimos a partir de las tipologías
-    const minDeliveryTime = Math.min(...typologies.map((t) => parseInt(t.Plazo_en_meses, 10) || Infinity));
-    const minDeposit = Math.min(...typologies.map((t) => parseInt(t.Cuota_inicial1, 10) || Infinity));
+    if (!projectId || availableTypologies.length === 0) {
+      const client = await this.pool.connect();
+      try {
+        const updateQuery =
+          'UPDATE public."Projects" SET delivery_time = 0, deposit = 0 WHERE hc = $1;';
+        await client.query(updateQuery, [projectId.toString()]);
+      } catch (error) {
+        console.error(
+          `❌ Error al resetear los datos agregados del proyecto ${projectId}:`,
+          error
+        );
+      } finally {
+        client.release();
+      }
+      return;
+    }
+
+    const projectIdStr = projectId.toString();
+    const minDeliveryTime = Math.min(
+      ...availableTypologies.map(
+        (t) => parseInt(t.Plazo_en_meses, 10) || Infinity
+      )
+    );
+    const minDeposit = Math.min(
+      ...availableTypologies.map(
+        (t) => parseInt(t.Cuota_inicial1, 10) || Infinity
+      )
+    );
 
     const client = await this.pool.connect();
     try {
-      const updateQuery = `
-                UPDATE public."Projects"
-                SET delivery_time = $1, deposit = $2
-                WHERE hc = $3;
-            `;
+      const updateQuery =
+        'UPDATE public."Projects" SET delivery_time = $1, deposit = $2 WHERE hc = $3;';
       await client.query(updateQuery, [
         minDeliveryTime !== Infinity ? minDeliveryTime : 0,
         minDeposit !== Infinity ? minDeposit : 0,
         projectIdStr,
       ]);
     } catch (error) {
-      console.error(`❌ Error al actualizar datos del proyecto ${projectIdStr}:`, error);
+      console.error(
+        `❌ Error al actualizar los datos agregados del proyecto ${projectIdStr}:`,
+        error
+      );
     } finally {
       client.release();
     }
@@ -485,43 +623,54 @@ class ZohoToPostgresSyncProjects {
   // Inicar sincronizacion de data
   async run() {
     try {
-      console.log("🚀 Iniciando sincronización de Proyectos y Tipologías...");
+      console.log(
+        "🚀 Iniciando la sincronización de Proyectos y Tipologías..."
+      );
       const token = await this.getZohoAccessToken();
-      console.log('🟡 Preparando para truncar la tabla "Typologies"...');
-      const client = await this.pool.connect();
-      try {
-        await client.query('TRUNCATE TABLE public."Typologies" RESTART IDENTITY CASCADE;');
-        console.log('✅ Tabla "Typologies" truncada con éxito.');
-      } finally {
-        client.release();
-      }
+
       let offset = 0;
       let more = true;
       while (more) {
-        const { data: projectsFromZoho, more: hasMore } = await this.getZohoProjects(token, offset);
-        if (!projectsFromZoho || projectsFromZoho.length === 0) break;
+        const { data: projectsFromZoho, more: hasMore } =
+          await this.getZohoProjects(token, offset);
+        if (!projectsFromZoho || projectsFromZoho.length === 0) {
+          console.log(
+            "ℹ️ No se encontraron más proyectos en Zoho. Finalizando bucle."
+          );
+          break;
+        }
 
         for (const project of projectsFromZoho) {
-          const insertResult = await this.insertProjectIntoPostgres(project, token);
+          const insertResult = await this.insertProjectIntoPostgres(
+            project,
+            token
+          );
           if (insertResult.success) {
-            const typologies = await this.getTypologiesFromZoho(token, insertResult.hc);
+            const typologies = await this.getTypologiesFromZoho(
+              token,
+              insertResult.hc
+            );
+
             await this.syncProjectData(insertResult.hc, typologies);
-            if (typologies.length > 0) {
-              await this.insertTypologies(insertResult.hc, typologies);
-            }
+            await this.syncTypologies(insertResult.hc, typologies);
           } else {
-            console.error(`🚨 Fallo al procesar el proyecto HC: ${project.id}. Razón: ${insertResult.message}. Omitiendo dependencias.`);
+            console.error(
+              `🚨 Falló el procesamiento del proyecto HC: ${project.id}. Razón: ${insertResult.message}. Omitiendo sus tipologías.`
+            );
           }
         }
         more = hasMore;
         offset += 200;
       }
-      console.log("✅ Sincronización finalizada.");
+      console.log("✅ Sincronización completada con éxito.");
     } catch (errorGeneral) {
-      console.error("🚨 ERROR CRÍTICO GENERAL. El proceso se detuvo.", errorGeneral);
+      console.error(
+        "🚨 ERROR CRÍTICO EN LA EJECUCIÓN GENERAL. El proceso se detuvo.",
+        errorGeneral
+      );
     } finally {
       if (this.pool) {
-        console.log("🔌 Cerrando pool de conexiones PostgreSQL...");
+        console.log("🔌 Cerrando todas las conexiones a la base de datos...");
         await this.pool.end();
       }
     }

@@ -144,7 +144,11 @@ class ZohoToPostgresSync {
                     seo_title = EXCLUDED.seo_title,
                     seo_meta_description = EXCLUDED.seo_meta_description,
                     "attributes" = EXCLUDED."attributes",
-                    gallery = EXCLUDED.gallery,
+                    gallery = CASE 
+                      WHEN public."Mega_Projects".gallery IS NOT NULL AND jsonb_array_length(public."Mega_Projects".gallery) > 0 
+                      THEN public."Mega_Projects".gallery 
+                      ELSE EXCLUDED.gallery 
+                    END,
                     latitude = EXCLUDED.latitude,
                     longitude = EXCLUDED.longitude,
                     is_public = CASE 
@@ -167,10 +171,10 @@ class ZohoToPostgresSync {
       const nameForSlug = project.Name || 'sin-nombre';
       const slug = nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       
-      // Manejo correcto de JSONB para la galería.
-      const galleryJson = project.Record_Image 
-        ? JSON.stringify([project.Record_Image]) // Si hay imagen, la pone en un array JSON
-        : '[]'; // Si no, un array JSON vacío.
+      // // Manejo correcto de JSONB para la galería.
+      // const galleryJson = project.Record_Image 
+      //   ? JSON.stringify([project.Record_Image]) // Si hay imagen, la pone en un array JSON
+      //   : '[]'; // Si no, un array JSON vacío.
 
       // === ARRAY DE VALORES COMPLETO ===
       const values = [
@@ -183,7 +187,7 @@ class ZohoToPostgresSync {
         /* $7  seo_title */ null, // Columna nueva, valor por defecto
         /* $8  seo_meta_description */ null, // Columna nueva, valor por defecto
         /* $9  attributes */ JSON.stringify(attributeIds), // JSONB
-        /* $10 gallery */ galleryJson, // JSONB
+        /* $10 gallery */ '[]', // JSONB
         /* $11 latitude */ (parseFloat(project.Latitud_MP) || 0).toString(), // TEXT
         /* $12 longitude */ (parseFloat(project.Longitud_MP) || 0).toString(), // TEXT
         /* $13 is_public */ false, // Booleano por defecto

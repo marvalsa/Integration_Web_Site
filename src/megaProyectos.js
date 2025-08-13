@@ -52,7 +52,6 @@ class ZohoToPostgresSync {
 
   // Obtener Datos de Mega Proyectos
   async getZohoProjectData(accessToken, offset = 0) {
-    
     const query = {
       select_query: `
                 SELECT
@@ -118,7 +117,7 @@ class ZohoToPostgresSync {
   }
 
   // =========================================================================
-  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS ==
+  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS (CORREGIDA) ==
   // =========================================================================
   async insertMegaProjectIntoPostgres(project, accessToken) {
     if (!project || !project.id) {
@@ -129,7 +128,7 @@ class ZohoToPostgresSync {
     }
     const client = await this.pool.connect();
     try {
-      // === CONSULTA SQL COMPLETA ===
+      // === CONSULTA SQL CORREGIDA ===
       const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
                     id, slug, "name", address, slogan, description, seo_title,
@@ -141,11 +140,19 @@ class ZohoToPostgresSync {
                     address = EXCLUDED.address,
                     slogan = EXCLUDED.slogan,
                     description = EXCLUDED.description,
-                    seo_title = EXCLUDED.seo_title,
-                    seo_meta_description = EXCLUDED.seo_meta_description,
+                    seo_title = CASE 
+                        WHEN public."Mega_Projects".seo_title IS NOT NULL 
+                        THEN public."Mega_Projects".seo_title 
+                        ELSE EXCLUDED.seo_title
+                    END,
+                    seo_meta_description = CASE 
+                        WHEN public."Mega_Projects".seo_meta_description IS NOT NULL 
+                        THEN public."Mega_Projects".seo_meta_description 
+                        ELSE EXCLUDED.seo_meta_description
+                    END,
                     "attributes" = EXCLUDED."attributes",
-                    gallery = CASE 
-                      WHEN public."Mega_Projects".gallery IS NOT NULL AND jsonb_array_length(public."Mega_Projects".gallery) > 0 
+                    gallery = CASE                       
+                      WHEN jsonb_typeof(public."Mega_Projects".gallery) = 'array' AND jsonb_array_length(public."Mega_Projects".gallery) > 0 
                       THEN public."Mega_Projects".gallery 
                       ELSE EXCLUDED.gallery 
                     END,
@@ -159,38 +166,35 @@ class ZohoToPostgresSync {
             `;
 
       // --- Preparación de datos ---
-      const attributesData = await this.getAttributesFromZoho(accessToken, project.id);
-      
+      const attributesData = await this.getAttributesFromZoho(
+        accessToken,
+        project.id
+      );
+
       const attributeIds = attributesData
         .map((attr) => attr.Atributo?.id)
         .filter(Boolean);
 
-      
-      // Crea un slug a partir del nombre y le añade el ID para garantizar que sea único.      
-      // const slug = `${nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${project.id}`;
-      const nameForSlug = project.Name || 'sin-nombre';
-      const slug = nameForSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      
-      // // Manejo correcto de JSONB para la galería.
-      // const galleryJson = project.Record_Image 
-      //   ? JSON.stringify([project.Record_Image]) // Si hay imagen, la pone en un array JSON
-      //   : '[]'; // Si no, un array JSON vacío.
+      const nameForSlug = project.Name || "sin-nombre";
+      const slug = nameForSlug
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
 
-      // === ARRAY DE VALORES COMPLETO ===
       const values = [
         /* $1  id */ project.id,
         /* $2  slug */ slug,
-        /* $3  name */ project.Name || '',
-        /* $4  address */ project.Direccion_MP || '',
-        /* $5  slogan */ project.Slogan_comercial || '',
-        /* $6  description */ project.Descripcion || '',
-        /* $7  seo_title */ null, // Columna nueva, valor por defecto
-        /* $8  seo_meta_description */ null, // Columna nueva, valor por defecto
-        /* $9  attributes */ JSON.stringify(attributeIds), // JSONB
-        /* $10 gallery */ '[]', // JSONB
-        /* $11 latitude */ (parseFloat(project.Latitud_MP) || 0).toString(), // TEXT
-        /* $12 longitude */ (parseFloat(project.Longitud_MP) || 0).toString(), // TEXT
-        /* $13 is_public */ false, // Booleano por defecto
+        /* $3  name */ project.Name || "",
+        /* $4  address */ project.Direccion_MP || "",
+        /* $5  slogan */ project.Slogan_comercial || "",
+        /* $6  description */ project.Descripcion || "",
+        /* $7  seo_title */ null,
+        /* $8  seo_meta_description */ null,
+        /* $9  attributes */ JSON.stringify(attributeIds),
+        /* $10 gallery */ "[]",
+        /* $11 latitude */ (parseFloat(project.Latitud_MP) || 0).toString(),
+        /* $12 longitude */ (parseFloat(project.Longitud_MP) || 0).toString(),
+        /* $13 is_public */ false,
       ];
 
       await client.query(insertQuery, values);
@@ -247,6 +251,5 @@ class ZohoToPostgresSync {
     }
   }
 }
-
 
 module.exports = ZohoToPostgresSync;

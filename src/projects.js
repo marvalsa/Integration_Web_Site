@@ -229,7 +229,7 @@ class ZohoToPostgresSyncProjects {
   }
 
   // =========================================================================
-  // == FUNCIÓN PRINCIPAL DE PROYECTOS ==
+  // == FUNCIÓN PRINCIPAL DE PROYECTOS (CORREGIDA) ==
   // =========================================================================
   async insertProjectIntoPostgres(project, accessToken) {
     if (!project?.id) {
@@ -248,6 +248,7 @@ class ZohoToPostgresSyncProjects {
           this.getRelatedProjectIds(accessToken, hcValue),
         ]);
 
+      // === CONSULTA SQL CORREGIDA ===
       const insertQuery = `
         INSERT INTO public."Projects" (
             hc, "name", slug, slogan, address, city, small_description, long_description,
@@ -261,30 +262,70 @@ class ZohoToPostgresSyncProjects {
             $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39
         )
         ON CONFLICT (hc) DO UPDATE SET
-            "name" = EXCLUDED.name, slug = EXCLUDED.slug, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
-            city = EXCLUDED.city, small_description = EXCLUDED.small_description, long_description = EXCLUDED.long_description,
-            seo_title = EXCLUDED.seo_title, seo_meta_description = EXCLUDED.seo_meta_description, sic = EXCLUDED.sic,
-            sales_room_address = EXCLUDED.sales_room_address, sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
-            sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude,
-            salary_minimum_count = EXcluded.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
-            deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description, bonus_ref = EXCLUDED.bonus_ref,
-            price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
+            "name" = EXCLUDED.name,
+            slug = EXCLUDED.slug,
+            slogan = EXCLUDED.slogan,
+            address = EXCLUDED.address,
+            city = EXCLUDED.city,
+            small_description = EXCLUDED.small_description,
+            long_description = EXCLUDED.long_description,
+            seo_title = CASE 
+                WHEN public."Projects".seo_title IS NOT NULL 
+                THEN public."Projects".seo_title 
+                ELSE EXCLUDED.seo_title 
+            END,
+            seo_meta_description = CASE 
+                WHEN public."Projects".seo_meta_description IS NOT NULL 
+                THEN public."Projects".seo_meta_description 
+                ELSE EXCLUDED.seo_meta_description 
+            END,
+            sic = EXCLUDED.sic,
+            sales_room_address = EXCLUDED.sales_room_address,
+            sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
+            sales_room_latitude = EXCLUDED.sales_room_latitude,
+            sales_room_longitude = EXCLUDED.sales_room_longitude,
+            salary_minimum_count = EXCLUDED.salary_minimum_count,
+            delivery_time = EXCLUDED.delivery_time,
+            deposit = EXCLUDED.deposit,
+            discount_description = EXCLUDED.discount_description, 
+            bonus_ref = CASE 
+                WHEN public."Projects".bonus_ref IS NOT NULL 
+                THEN public."Projects".bonus_ref 
+                ELSE EXCLUDED.bonus_ref
+            END,
+            price_from_general = EXCLUDED.price_from_general,
+            price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
-            gallery = CASE 
-                        WHEN public."Projects".gallery IS NOT NULL AND jsonb_array_length(public."Projects".gallery) > 0 
+            gallery = CASE                       
+                        WHEN jsonb_typeof(public."Projects".gallery) = 'array' AND jsonb_array_length(public."Projects".gallery) > 0 
                         THEN public."Projects".gallery 
                         ELSE EXCLUDED.gallery 
                       END,
-            urban_plans = CASE 
-                            WHEN public."Projects".urban_plans IS NOT NULL AND jsonb_array_length(public."Projects".urban_plans) > 0
+            urban_plans = CASE                           
+                            WHEN jsonb_typeof(public."Projects".urban_plans) = 'array' AND jsonb_array_length(public."Projects".urban_plans) > 0
                             THEN public."Projects".urban_plans 
                             ELSE EXCLUDED.urban_plans
                           END,
-            work_progress_images = EXCLUDED.work_progress_images, tour_360 = EXCLUDED.tour_360,
-            "type" = EXCLUDED.type, status = EXCLUDED.status, highlighted = EXCLUDED.highlighted,
-            built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,
-            bathrooms = EXCLUDED.bathrooms, relation_projects = EXCLUDED.relation_projects,
-            latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
+            work_progress_images = CASE                           
+                            WHEN jsonb_typeof(public."Projects".work_progress_images) = 'array' AND jsonb_array_length(public."Projects".work_progress_images) > 0
+                            THEN public."Projects".work_progress_images 
+                            ELSE EXCLUDED.work_progress_images
+                          END,
+            tour_360 = CASE 
+                WHEN public."Projects".tour_360 IS NOT NULL 
+                THEN public."Projects".tour_360 
+                ELSE EXCLUDED.tour_360
+            END,
+            "type" = EXCLUDED.type,
+            status = EXCLUDED.status,
+            highlighted = EXCLUDED.highlighted,
+            built_area = EXCLUDED.built_area,
+            private_area = EXCLUDED.private_area,
+            rooms = EXCLUDED.rooms,
+            bathrooms = EXCLUDED.bathrooms,
+            relation_projects = EXCLUDED.relation_projects,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
             mega_project_id = EXCLUDED.mega_project_id, 
             is_public = CASE 
                 WHEN public."Projects".is_public IS NOT NULL 
@@ -292,6 +333,7 @@ class ZohoToPostgresSyncProjects {
                 ELSE EXCLUDED.is_public
             END;
       `;
+      // ... El resto de la función no necesita cambios ...
       const statusObject = await this.getStatusObjectFromDb(
         project.Estado,
         client
@@ -421,7 +463,7 @@ class ZohoToPostgresSyncProjects {
   }
 
   // =========================================================================
-  // == FUNCIÓN DE SINCRONIZACIÓN MANUAL ==
+  // == FUNCIÓN DE SINCRONIZACIÓN MANUAL==
   // =========================================================================
   async syncTypologies(projectHc, typologiesFromZoho) {
     const client = await this.pool.connect();
@@ -431,27 +473,23 @@ class ZohoToPostgresSyncProjects {
 
       // 1. Obtener datos de ambas fuentes y normalizar los nombres con .trim()
       const dbResult = await client.query(
-        'SELECT id, "name", gallery FROM public."Typologies" WHERE project_id = $1',
+        'SELECT id, "name", gallery, "plans" FROM public."Typologies" WHERE project_id = $1',
         [projectHc]
       );
 
-      // ***** CAMBIO 1: Aplicar .trim() al crear el Map de la DB *****
+      // <<< CAMBIO 2: Guardamos el valor de "plans" en el Map >>>
       const dbTypologiesMap = new Map(
         dbResult.rows.map((t) => [
-          t.name.trim(), // Normalizamos el nombre de la DB
-          { id: t.id, gallery: t.gallery },
+          t.name.trim(),
+          { id: t.id, gallery: t.gallery, plans: t.plans }, // Guardamos el valor de 'plans'
         ])
       );
 
-      // ***** CAMBIO 2: Aplicar .trim() al crear el Map de Zoho *****
       const zohoTypologiesMap = new Map(
-        typologiesFromZoho.map((t) => [
-          t.Nombre.trim(), // Normalizamos el nombre de Zoho
-          t,
-        ])
+        typologiesFromZoho.map((t) => [t.Nombre.trim(), t])
       );
 
-      // 2. Eliminar tipologías obsoletas
+      // 2. Eliminar tipologías obsoletas (sin cambios aquí)
       const namesToDelete = [...dbTypologiesMap.keys()].filter(
         (dbName) => !zohoTypologiesMap.has(dbName)
       );
@@ -471,8 +509,8 @@ class ZohoToPostgresSyncProjects {
       for (const t of typologiesFromZoho) {
         if (!t.id || !t.Nombre) continue;
 
-        const trimmedName = t.Nombre.trim(); // Usamos el nombre "limpio" para la lógica
-        if (!trimmedName) continue; // Si el nombre queda vacío después del trim, lo ignoramos
+        const trimmedName = t.Nombre.trim();
+        if (!trimmedName) continue;
 
         const availableUnits = parseInt(t.Und_Disponibles, 10);
         if (isNaN(availableUnits) || availableUnits < 1) {
@@ -482,8 +520,8 @@ class ZohoToPostgresSyncProjects {
           continue;
         }
 
-        const existingTypology = dbTypologiesMap.get(trimmedName); // Buscamos por el nombre "limpio"
-        // Valida si existen las typologies en DB - CMR
+        const existingTypology = dbTypologiesMap.get(trimmedName);
+
         if (existingTypology) {
           // --- ACTUALIZAR ---
           let galleryValueToUpdate = "[]";
@@ -492,6 +530,11 @@ class ZohoToPostgresSyncProjects {
             existingTypology.gallery.length > 0
           ) {
             galleryValueToUpdate = JSON.stringify(existingTypology.gallery);
+          }
+
+          let plansValueToUpdate = "";
+          if (existingTypology.plans) {
+            plansValueToUpdate = existingTypology.plans;
           }
 
           const updateQuery = `
@@ -516,13 +559,13 @@ class ZohoToPostgresSyncProjects {
             parseInt(t.Cuota_inicial1, 10) || 0,
             parseInt(t.Plazo_en_meses, 10) || 0,
             availableUnits,
-            "",
+            plansValueToUpdate, // Usamos la variable con la lógica ($13)
             galleryValueToUpdate, // $14
             projectHc, // $15
-            trimmedName, // $16: Usamos el nombre limpio para encontrar la fila
+            trimmedName, // $16
           ]);
         } else {
-          // --- INSERTAR ---
+          // --- INSERTAR --- (sin cambios aquí, se inserta con "plans" vacío)
           const insertQuery = `
               INSERT INTO public."Typologies" (
                 id, project_id, "name", description, price_from, price_up, rooms, bathrooms,
@@ -533,7 +576,7 @@ class ZohoToPostgresSyncProjects {
           await client.query(insertQuery, [
             t.id.toString(),
             projectHc,
-            trimmedName, // Guardamos el nombre limpio en la DB
+            trimmedName,
             t.Descripci_n || "",
             parseInt(t.Precio_desde, 10) || 0,
             0,
@@ -546,7 +589,7 @@ class ZohoToPostgresSyncProjects {
             parseInt(t.Plazo_en_meses, 10) || 0,
             availableUnits,
             "[]",
-            "",
+            "", // "plans" se inserta como string vacío
           ]);
         }
       }

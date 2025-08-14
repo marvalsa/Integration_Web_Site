@@ -261,43 +261,57 @@ class ZohoToPostgresSyncProjects {
         ON CONFLICT (hc) DO UPDATE SET
             "name" = EXCLUDED.name, slug = EXCLUDED.slug, slogan = EXCLUDED.slogan, address = EXCLUDED.address,
             city = EXCLUDED.city, small_description = EXCLUDED.small_description, long_description = EXCLUDED.long_description,
-            seo_title = = CASE
-                            WHEN public."Projects".seo_title IS NOT NULL
-                            THEN public."Projects".seo_title
-                            ELSE EXCLUDED.seo_title
-                        END,
-            seo_meta_description = CASE
-                            WHEN public."Projects".seo_meta_description IS NOT NULL
-                            THEN public."Projects".seo_meta_description
-                            ELSE EXCLUDED.seo_meta_description
-                        END,
+            seo_title = CASE 
+                WHEN public."Projects".seo_title IS NOT NULL 
+                THEN public."Projects".seo_title 
+                ELSE EXCLUDED.seo_title 
+            END,
+            seo_meta_description = CASE 
+                WHEN public."Projects".seo_meta_description IS NOT NULL 
+                THEN public."Projects".seo_meta_description 
+                ELSE EXCLUDED.seo_meta_description 
+            END,
             sic = EXCLUDED.sic,
             sales_room_address = EXCLUDED.sales_room_address, sales_room_schedule_attention = EXCLUDED.sales_room_schedule_attention,
             sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude,
             salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
-            deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description, bonus_ref = EXCLUDED.bonus_ref,
+            deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description,
+            bonus_ref = CASE 
+                WHEN public."Projects".bonus_ref IS NOT NULL 
+                THEN public."Projects".bonus_ref 
+                ELSE EXCLUDED.bonus_ref
+            END,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
-            gallery = CASE 
-                        WHEN public."Projects".gallery IS NOT NULL AND jsonb_array_length(public."Projects".gallery) > 0 
+            gallery = CASE                       
+                        WHEN jsonb_typeof(public."Projects".gallery) = 'array' AND jsonb_array_length(public."Projects".gallery) > 0 
                         THEN public."Projects".gallery 
                         ELSE EXCLUDED.gallery 
                       END,
-            urban_plans = CASE 
-                            WHEN public."Projects".urban_plans IS NOT NULL AND jsonb_array_length(public."Projects".urban_plans) > 0
+            urban_plans = CASE                           
+                            WHEN jsonb_typeof(public."Projects".urban_plans) = 'array' AND jsonb_array_length(public."Projects".urban_plans) > 0
                             THEN public."Projects".urban_plans 
                             ELSE EXCLUDED.urban_plans
                           END,
-            work_progress_images = EXCLUDED.work_progress_images, tour_360 = EXCLUDED.tour_360,
+            work_progress_images = CASE                           
+                            WHEN jsonb_typeof(public."Projects".work_progress_images) = 'array' AND jsonb_array_length(public."Projects".work_progress_images) > 0
+                            THEN public."Projects".work_progress_images 
+                            ELSE EXCLUDED.work_progress_images
+                          END,
+            tour_360 = CASE 
+                WHEN public."Projects".tour_360 IS NOT NULL 
+                THEN public."Projects".tour_360 
+                ELSE EXCLUDED.tour_360
+            END,
             "type" = EXCLUDED.type, status = EXCLUDED.status, highlighted = EXCLUDED.highlighted,
             built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,
             bathrooms = EXCLUDED.bathrooms, relation_projects = EXCLUDED.relation_projects,
             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,            
-            is_public = CASE
-                            WHEN public."Projects".is_public IS NOT NULL
-                            THEN public."Projects".is_public
-                            ELSE EXCLUDED.is_public
-                        END,
+            is_public = CASE 
+                WHEN public."Projects".is_public IS NOT NULL 
+                THEN public."Projects".is_public 
+                ELSE EXCLUDED.is_public
+            END,
             mega_project_id = EXCLUDED.mega_project_id;            
       `;
 
@@ -465,8 +479,7 @@ class ZohoToPostgresSyncProjects {
         const checkResult = await client.query(checkQuery, [projectHc.toString(), t.Nombre]);
 
         const galleryData = "[]";
-        const plansData = "";
-        const isPublicDefault = false;
+        const plansData = "";        
 
         if (checkResult.rows.length > 0) {
           // --- Si EXISTE, la ACTUALIZAMOS ---
@@ -484,18 +497,17 @@ class ZohoToPostgresSyncProjects {
               min_deposit = $10,
               delivery_time = $11,
               available_count = $12,
-              gallery = CASE
-                          WHEN gallery IS NOT NULL AND jsonb_array_length(gallery) > 0
-                          THEN gallery
-                          ELSE $13
-                        END,
-              "plans" = $14,
-              is_public = CASE
-                            WHEN is_public IS NOT NULL
-                            THEN is_public
-                            ELSE $15
-                          END
-            WHERE project_id = $16 AND "name" = $17;
+              gallery = CASE                       
+                        WHEN jsonb_typeof(public."Typologies".gallery) = 'array' AND jsonb_array_length(public."Typologies".gallery) > 0 
+                        THEN public."Typologies".gallery 
+                        ELSE $13
+                      END,
+              "plans" = CASE
+                            WHEN "plans" IS NOT NULL
+                            THEN "plans"
+                            ELSE $14
+                        END             
+            WHERE project_id = $15 AND "name" = $16;
           `;
           const values = [
             /* $1 id */ t.id.toString(),
@@ -511,10 +523,9 @@ class ZohoToPostgresSyncProjects {
             /* $11 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
             /* $12 available_count */ availableUnits,
             /* $13 gallery */ galleryData,
-            /* $14 plans */ plansData,
-            /* $15 is_public */ isPublicDefault,
-            /* $16 project_id (WHERE) */ projectHc.toString(),
-            /* $17 name (WHERE) */ t.Nombre || ""
+            /* $14 plans */ plansData,            
+            /* $15 project_id (WHERE) */ projectHc.toString(),
+            /* $16 name (WHERE) */ t.Nombre || "",
           ];
           await client.query(updateQuery, values);
 
@@ -524,8 +535,8 @@ class ZohoToPostgresSyncProjects {
             INSERT INTO public."Typologies" (
                 id, project_id, "name", description, price_from, price_up, rooms, bathrooms,
                 built_area, private_area, min_separation, min_deposit, delivery_time,
-                available_count, gallery, "plans", is_public
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
+                available_count, gallery, "plans"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
           `;
           const values = [
             /* $1 id */ t.id.toString(),
@@ -543,8 +554,7 @@ class ZohoToPostgresSyncProjects {
             /* $13 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
             /* $14 available_count */ availableUnits,
             /* $15 gallery */ galleryData,
-            /* $16 plans */ plansData,
-            /* $17 is_public */ isPublicDefault,
+            /* $16 plans */ plansData            
           ];
           await client.query(insertQuery, values);
         }

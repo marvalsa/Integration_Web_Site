@@ -143,29 +143,29 @@ class MegaProjectsSync {
             address = EXCLUDED.address,
             slogan = EXCLUDED.slogan, 
             description = EXCLUDED.description,
-            seo_title = CASE                
-                          WHEN public."Mega_Projects".seo_title IS NOT NULL                
-                          THEN public."Mega_Projects".seo_title                
-                          ELSE EXCLUDED.seo_title
-                        END, 
-            seo_meta_description = CASE                
-                          WHEN public."Mega_Projects".seo_meta_description IS NOT NULL                
-                          THEN public."Mega_Projects".seo_meta_description                
-                          ELSE EXCLUDED.seo_meta_description
-                        END,
+            seo_title = CASE 
+                        WHEN public."Mega_Projects".seo_title IS NOT NULL 
+                        THEN public."Mega_Projects".seo_title 
+                        ELSE EXCLUDED.seo_title
+                    END,
+            seo_meta_description = CASE 
+                WHEN public."Mega_Projects".seo_meta_description IS NOT NULL 
+                THEN public."Mega_Projects".seo_meta_description 
+                ELSE EXCLUDED.seo_meta_description
+            END,
             "attributes" = EXCLUDED.attributes,
             latitude = EXCLUDED.latitude, 
             longitude = EXCLUDED.longitude,           
-            gallery = CASE 
-                        WHEN public."Mega_Projects".gallery IS NOT NULL AND jsonb_array_length(public."Mega_Projects".gallery) > 0 
-                        THEN public."Mega_Projects".gallery 
-                        ELSE EXCLUDED.gallery 
-                      END,            
-            is_public = CASE                
-                          WHEN public."Mega_Projects".is_public IS NOT NULL                
-                          THEN public."Mega_Projects".is_public                
-                          ELSE EXCLUDED.is_public
-                        END;            
+            gallery = CASE                       
+                      WHEN jsonb_typeof(public."Mega_Projects".gallery) = 'array' AND jsonb_array_length(public."Mega_Projects".gallery) > 0 
+                      THEN public."Mega_Projects".gallery 
+                      ELSE EXCLUDED.gallery 
+                    END,            
+            is_public = CASE 
+                        WHEN public."Mega_Projects".is_public IS NOT NULL 
+                        THEN public."Mega_Projects".is_public 
+                        ELSE EXCLUDED.is_public
+                    END;           
       `;
 
       // La lógica para obtener atributos y preparar datos permanece igual

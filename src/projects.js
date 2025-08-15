@@ -229,7 +229,7 @@ class ZohoToPostgresSyncProjects {
   }
 
   // =========================================================================
-  // == FUNCIÓN PRINCIPAL DE PROYECTOS (CORREGIDA) ==
+  // == FUNCIÓN PRINCIPAL DE PROYECTOS ==
   // =========================================================================
   async insertProjectIntoPostgres(project, accessToken) {
     if (!project?.id) {
@@ -248,7 +248,7 @@ class ZohoToPostgresSyncProjects {
           this.getRelatedProjectIds(accessToken, hcValue),
         ]);
 
-      // === CONSULTA SQL CORREGIDA ===
+      // === CONSULTA SQL  ===
       const insertQuery = `
         INSERT INTO public."Projects" (
             hc, "name", slug, slogan, address, city, small_description, long_description,
@@ -333,7 +333,7 @@ class ZohoToPostgresSyncProjects {
                 ELSE EXCLUDED.is_public
             END;
       `;
-      // ... El resto de la función no necesita cambios ...
+      // --- INICIO Preparación de datos ---
       const statusObject = await this.getStatusObjectFromDb(
         project.Estado,
         client
@@ -377,9 +377,16 @@ class ZohoToPostgresSyncProjects {
           ? parseInt(project.Cantidad_SMMLV, 10) || 0
           : 0;
 
+      const nameProject = (project.Name || "")
+        .toLowerCase()
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+
+      // --- FIN Preparación de datos ---
       const values = [
         hcValue,
-        project.Name || "",
+        nameProject,
         project.Slug || "",
         project.Slogan || "",
         project.Direccion || "",
@@ -423,7 +430,7 @@ class ZohoToPostgresSyncProjects {
 
       await client.query(insertQuery, values);
       console.log(
-        `✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${project.Name}`
+        `✅ Proyecto insertado/actualizado (HC: ${hcValue}): ${nameProject}`
       );
       return { success: true, hc: hcValue };
     } catch (error) {
@@ -463,7 +470,7 @@ class ZohoToPostgresSyncProjects {
   }
 
   // =========================================================================
-  // == FUNCIÓN DE SINCRONIZACIÓN MANUAL==
+  // == FUNCIÓN DE SINCRONIZACIÓN ==
   // =========================================================================
   async syncTypologies(projectHc, typologiesFromZoho) {
     const client = await this.pool.connect();
@@ -489,7 +496,7 @@ class ZohoToPostgresSyncProjects {
         typologiesFromZoho.map((t) => [t.Nombre.trim(), t])
       );
 
-      // 2. Eliminar tipologías obsoletas (sin cambios aquí)
+      // 2. Eliminar tipologías obsoletas 
       const namesToDelete = [...dbTypologiesMap.keys()].filter(
         (dbName) => !zohoTypologiesMap.has(dbName)
       );
@@ -523,7 +530,7 @@ class ZohoToPostgresSyncProjects {
         const existingTypology = dbTypologiesMap.get(trimmedName);
 
         if (existingTypology) {
-          // --- ACTUALIZAR ---
+          
           let galleryValueToUpdate = "[]";
           if (
             Array.isArray(existingTypology.gallery) &&
@@ -559,13 +566,13 @@ class ZohoToPostgresSyncProjects {
             parseInt(t.Cuota_inicial1, 10) || 0,
             parseInt(t.Plazo_en_meses, 10) || 0,
             availableUnits,
-            plansValueToUpdate, // Usamos la variable con la lógica ($13)
+            plansValueToUpdate, // ($13)
             galleryValueToUpdate, // $14
             projectHc, // $15
             trimmedName, // $16
           ]);
         } else {
-          // --- INSERTAR --- (sin cambios aquí, se inserta con "plans" vacío)
+          // --- INSERTAR --- 
           const insertQuery = `
               INSERT INTO public."Typologies" (
                 id, project_id, "name", description, price_from, price_up, rooms, bathrooms,

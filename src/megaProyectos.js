@@ -117,7 +117,7 @@ class ZohoToPostgresSync {
   }
 
   // =========================================================================
-  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS (CORREGIDA) ==
+  // == FUNCIÓN PRINCIPAL DE MEGA PROYECTOS ==
   // =========================================================================
   async insertMegaProjectIntoPostgres(project, accessToken) {
     if (!project || !project.id) {
@@ -128,7 +128,7 @@ class ZohoToPostgresSync {
     }
     const client = await this.pool.connect();
     try {
-      // === CONSULTA SQL CORREGIDA ===
+      // === CONSULTA SQL  ===
       const insertQuery = `
                 INSERT INTO public."Mega_Projects" (
                     id, slug, "name", address, slogan, description, seo_title,
@@ -165,7 +165,7 @@ class ZohoToPostgresSync {
                     END;
             `;
 
-      // --- Preparación de datos ---
+      // --- INICIO Preparación de datos ---
       const attributesData = await this.getAttributesFromZoho(
         accessToken,
         project.id
@@ -181,10 +181,21 @@ class ZohoToPostgresSync {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
 
+      const nameMegaProject = (project.Name || "")
+        .toLowerCase()
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+      // --- FIN Preparación de datos ---
+
+      console.log(
+        `🔄 Procesando Mega Proyecto ID ${project.id}: ${project.Name}`
+      );
+
       const values = [
         /* $1  id */ project.id,
         /* $2  slug */ slug,
-        /* $3  name */ project.Name || "",
+        /* $3  name */ nameMegaProject,
         /* $4  address */ project.Direccion_MP || "",
         /* $5  slogan */ project.Slogan_comercial || "",
         /* $6  description */ project.Descripcion || "",
@@ -199,7 +210,7 @@ class ZohoToPostgresSync {
 
       await client.query(insertQuery, values);
       console.log(
-        `✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${project.Name}`
+        `✅ Mega Proyecto insertado/actualizado (ID: ${project.id}): ${nameMegaProject}`
       );
     } catch (error) {
       console.error(

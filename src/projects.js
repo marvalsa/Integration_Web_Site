@@ -360,11 +360,18 @@ class ZohoToPostgresSyncProjects {
         project.Precio_en_SMMLV === true
           ? parseInt(project.Cantidad_SMMLV, 10) || 0
           : 0;
+          
+      // Ajuste de nombre de proyecto con ortografia [19/08/25]
+      const nameProject = (project.Name || "")
+        .toLowerCase()
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
 
       // === ARRAY DE VALORES COMPLETO ===
       const values = [
         /* $1  hc */ hcValue,
-        /* $2  name */ project.Name || "",
+        /* $2  name */ nameProject,
         /* $3  slug */ project.Slug || "",
         /* $4  slogan */ project.Slogan || "",
         /* $5  address */ project.Direccion || "",
@@ -398,7 +405,7 @@ class ZohoToPostgresSyncProjects {
         /* $29 status */ statusForDb,
         /* $30 highlighted */ project.Proyecto_destacado || false,
         /* $31 built_area */ parseFloat(project.Area_construida_desde) || 0,
-        /* $32 private_area */ parseFloat(project.Area_construida_hasta) || 0, 
+        /* $32 private_area */ parseFloat(project.Area_construida_hasta) || 0,
         /* $33 rooms */ roomsValue,
         /* $34 bathrooms */ bathroomsValue,
         /* $35 relation_projects */ relatedProjectsJson,
@@ -471,15 +478,18 @@ class ZohoToPostgresSyncProjects {
             `ℹ️ Omitiendo tipología "${t.Nombre}" (Proyecto ${projectHc}) por no tener unidades disponibles.`
           );
           continue;
-        } 
+        }
         // Paso 1: Verificar si la tipología ya existe para este proyecto y nombre
         const checkQuery = `
           SELECT id FROM public."Typologies" WHERE project_id = $1 AND "name" = $2 LIMIT 1;
         `;
-        const checkResult = await client.query(checkQuery, [projectHc.toString(), t.Nombre]);
+        const checkResult = await client.query(checkQuery, [
+          projectHc.toString(),
+          t.Nombre,
+        ]);
 
         const galleryData = "[]";
-        const plansData = "";        
+        const plansData = "";
 
         if (checkResult.rows.length > 0) {
           // --- Si EXISTE, la ACTUALIZAMOS ---
@@ -523,12 +533,11 @@ class ZohoToPostgresSyncProjects {
             /* $11 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
             /* $12 available_count */ availableUnits,
             /* $13 gallery */ galleryData,
-            /* $14 plans */ plansData,            
+            /* $14 plans */ plansData,
             /* $15 project_id (WHERE) */ projectHc.toString(),
             /* $16 name (WHERE) */ t.Nombre || "",
           ];
           await client.query(updateQuery, values);
-
         } else {
           // --- Si NO EXISTE, la INSERTAMOS ---
           const insertQuery = `
@@ -554,11 +563,11 @@ class ZohoToPostgresSyncProjects {
             /* $13 delivery_time */ parseInt(t.Plazo_en_meses, 10) || 0,
             /* $14 available_count */ availableUnits,
             /* $15 gallery */ galleryData,
-            /* $16 plans */ plansData            
+            /* $16 plans */ plansData,
           ];
           await client.query(insertQuery, values);
         }
-        
+
         processedIds.add(t.id.toString());
       }
       return { success: true, processedIds };
@@ -569,7 +578,7 @@ class ZohoToPostgresSyncProjects {
       );
       // Añadimos más detalle para depuración
       if (error.stack) {
-          console.error(error.stack);
+        console.error(error.stack);
       }
       return { success: false, processedIds: new Set() };
     } finally {

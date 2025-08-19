@@ -188,11 +188,17 @@ class MegaProjectsSync {
             { id: project.Record_Image, url: project.Record_Image },
           ])
         : "[]";
+      // Nombres de megaproyectos con ortografia [19/08/25]
+      const nameMegaProject = (project.Name || "")
+      .toLowerCase()
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
 
       const values = [
         /* $1  id */ projectId,
         /* $2  slug */ slug,
-        /* $3  name */ project.Name || "",
+        /* $3  name */ nameMegaProject,
         /* $4  address */ project.Direccion_MP || "",
         /* $5  slogan */ project.Slogan_comercial || "",
         /* $6  description */ project.Descripcion || "",

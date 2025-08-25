@@ -288,11 +288,7 @@ class ZohoToPostgresSyncProjects {
             delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit,
             discount_description = EXCLUDED.discount_description, 
-            bonus_ref = CASE 
-                WHEN public."Projects".bonus_ref IS NOT NULL 
-                THEN public."Projects".bonus_ref 
-                ELSE EXCLUDED.bonus_ref
-            END,
+            bonus_ref = EXCLUDED.bonus_ref,
             price_from_general = EXCLUDED.price_from_general,
             price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
@@ -404,7 +400,7 @@ class ZohoToPostgresSyncProjects {
         0,
         0,
         project.Descripcion_descuento || null,
-        project.Bonus_Ref || null,
+        project.bonus_ref || null,
         parseInt(project.Precios_desde, 10) || 0,
         parseInt(project.Precios_hasta, 10) || 0,
         attributesJson,

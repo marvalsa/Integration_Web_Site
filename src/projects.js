@@ -276,10 +276,7 @@ class ZohoToPostgresSyncProjects {
             sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude,
             salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description,
-            bonus_ref = CASE 
-                WHEN public."Projects".bonus_ref IS NOT NULL 
-                THEN public."Projects".bonus_ref 
-                ELSE EXCLUDED.bonus_ref
+            bonus_ref = EXCLUDED.bonus_ref
             END,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
@@ -393,7 +390,7 @@ class ZohoToPostgresSyncProjects {
         /* $17 delivery_time */ 0, // Se calcula después
         /* $18 deposit */ 0, // Se calcula después
         /* $19 discount_description */ project.Descripcion_descuento || null,
-        /* $20 bonus_ref */ null, // <-- Validar de que este campo exista en Zoho
+        /* $20 bonus_ref */ project.bonus_ref || null, 
         /* $21 price_from_general */ parseInt(project.Precios_desde, 10) || 0,
         /* $22 price_up_general */ parseInt(project.Precios_hasta, 10) || 0,
         /* $23 attributes */ attributesJson,

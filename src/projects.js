@@ -48,13 +48,13 @@ class ZohoToPostgresSyncProjects {
   async getZohoProjects(accessToken, offset = 0) {
     const coqlQueryObject = {
       select_query: `
-                SELECT id, Name, Slogan, Direccion, Descripcion_corta, Descripcion_larga, SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento, Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id, Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta, Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug, Precio_en_SMMLV FROM Proyectos_Comerciales 
+                SELECT id, Name, Slogan, Direccion, Descripcion_corta, Descripcion_larga, SIG, Sala_de_ventas.Name, Cantidad_SMMLV, Descripcion_descuento, Precios_desde, Precios_hasta, Tipo_de_proyecto, Mega_Proyecto.id, Estado, Proyecto_destacado, Area_construida_desde, Area_construida_hasta, Habitaciones, Ba_os, Latitud, Longitud, Ciudad.Name, Sala_de_ventas.id, Slug, Precio_en_SMMLV, bonus_ref FROM Proyectos_Comerciales 
                 WHERE (((((((((((((((((((((id is not null) and Name is not null) and Slogan is not null) and Direccion is not null) and Descripcion_corta is not null) 
                   and Sala_de_ventas.Name is not null) and Cantidad_SMMLV is not null) and Precios_desde is not null) and Precios_hasta is not null) 
                   and Tipo_de_proyecto is not null) and Estado is not null) and Proyecto_destacado is not null) and Area_construida_desde is not null) 
                   and Area_construida_hasta is not null) and Habitaciones is not null) and Ba_os is not null) and Latitud is not null) and Longitud is not null) and Sala_de_ventas.id is not null) 
                   and Slug is not null) and Precio_en_SMMLV is not null)
-                LIMIT ${offset}, 200
+                LIMIT ${offset}, 200            
             `,
     };
     try {

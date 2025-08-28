@@ -276,8 +276,7 @@ class ZohoToPostgresSyncProjects {
             sales_room_latitude = EXCLUDED.sales_room_latitude, sales_room_longitude = EXCLUDED.sales_room_longitude,
             salary_minimum_count = EXCLUDED.salary_minimum_count, delivery_time = EXCLUDED.delivery_time,
             deposit = EXCLUDED.deposit, discount_description = EXCLUDED.discount_description,
-            bonus_ref = EXCLUDED.bonus_ref
-            END,
+            bonus_ref = EXCLUDED.bonus_ref,
             price_from_general = EXCLUDED.price_from_general, price_up_general = EXCLUDED.price_up_general,
             "attributes" = EXCLUDED.attributes,
             gallery = CASE                       
@@ -296,10 +295,10 @@ class ZohoToPostgresSyncProjects {
                             ELSE EXCLUDED.work_progress_images
                           END,
             tour_360 = CASE 
-                WHEN public."Projects".tour_360 IS NOT NULL 
-                THEN public."Projects".tour_360 
-                ELSE EXCLUDED.tour_360
-            END,
+                            WHEN public."Projects".tour_360 IS NOT NULL 
+                            THEN public."Projects".tour_360 
+                            ELSE EXCLUDED.tour_360
+                          END,
             "type" = EXCLUDED.type, status = EXCLUDED.status, highlighted = EXCLUDED.highlighted,
             built_area = EXCLUDED.built_area, private_area = EXCLUDED.private_area, rooms = EXCLUDED.rooms,
             bathrooms = EXCLUDED.bathrooms, relation_projects = EXCLUDED.relation_projects,
@@ -357,7 +356,7 @@ class ZohoToPostgresSyncProjects {
         project.Precio_en_SMMLV === true
           ? parseInt(project.Cantidad_SMMLV, 10) || 0
           : 0;
-          
+
       // Ajuste de nombre de proyecto con ortografia [19/08/25]
       const nameProject = (project.Name || "")
         .toLowerCase()
@@ -390,7 +389,7 @@ class ZohoToPostgresSyncProjects {
         /* $17 delivery_time */ 0, // Se calcula después
         /* $18 deposit */ 0, // Se calcula después
         /* $19 discount_description */ project.Descripcion_descuento || null,
-        /* $20 bonus_ref */ project.bonus_ref || null, 
+        /* $20 bonus_ref */ project.bonus_ref || null,
         /* $21 price_from_general */ parseInt(project.Precios_desde, 10) || 0,
         /* $22 price_up_general */ parseInt(project.Precios_hasta, 10) || 0,
         /* $23 attributes */ attributesJson,
@@ -510,10 +509,10 @@ class ZohoToPostgresSyncProjects {
                         ELSE $13
                       END,
               "plans" = CASE
-                            WHEN "plans" IS NOT NULL
-                            THEN "plans"
-                            ELSE $14
-                        END             
+                        WHEN "plans" IS NOT NULL
+                        THEN "plans"
+                        ELSE $14
+                      END             
             WHERE project_id = $15 AND "name" = $16;
           `;
           const values = [

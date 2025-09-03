@@ -18,7 +18,7 @@ class ZohoToPostgresSyncProjects {
       clientId: process.env.ZOHO_CLIENT_ID,
       clientSecret: process.env.ZOHO_CLIENT_SECRET,
       refreshToken: process.env.ZOHO_REFRESH_TOKEN,
-      baseURL: "https://www.zohoapis.com/crm/v7",
+      baseURL: "https://www.zohoapis.com/crm/v6",
     };
   }
 
@@ -449,7 +449,7 @@ class ZohoToPostgresSyncProjects {
   async getTypologiesFromZoho(accessToken, parentId) {
     try {
       const response = await axios.get(
-        `${this.zohoConfig.baseURL}/Tipologias/search?criteria=(Parent_Id.id:equals:${parentId})`,
+        `${this.zohoConfig.baseURL}/Tipologias/search?criteria=((Parent_Id.id:equals:${parentId})and(Und_Disponibles:not_equal:null))`,
         {
           headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
           validateStatus: (status) => [200, 204].includes(status),
